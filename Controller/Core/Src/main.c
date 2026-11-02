@@ -39,6 +39,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define INPUT_SAMPLE_PERIOD_MS 20U
 
 /* USER CODE END PD */
 
@@ -51,6 +52,8 @@
 
 /* USER CODE BEGIN PV */
 static Buttons_State buttons;
+static Joystick_State joystick;
+static uint32_t last_joystick_read;
 
 /* USER CODE END PV */
 
@@ -104,6 +107,7 @@ int main(void)
   }
   tft_init(PIN_ON_TOP, BLACK, WHITE, CYAN, DARK_GREY);
   Buttons_Init(HAL_GetTick());
+  last_joystick_read = HAL_GetTick() - INPUT_SAMPLE_PERIOD_MS;
 
   /* USER CODE END 2 */
 
@@ -114,7 +118,13 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    Buttons_Read(HAL_GetTick(), &buttons);
+    uint32_t now = HAL_GetTick();
+    Buttons_Read(now, &buttons);
+    if ((uint32_t)(now - last_joystick_read) >= INPUT_SAMPLE_PERIOD_MS)
+    {
+      last_joystick_read = now;
+      Joystick_Read(&joystick);
+    }
   }
   /* USER CODE END 3 */
 }

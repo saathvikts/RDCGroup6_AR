@@ -17,5 +17,8 @@ from the user's existing advanced-tutorial-1-Advanced-Embedded-Systems project,
 under projects/Controller. The reader uses 71.5-cycle sampling to match the TR
 ADC configuration.
 
+The normalization calculation in Controller/Core/Src/joystick.c is adapted
+from CW1_NormalizeAxis() in that tutorial's Core/Src/student_tasks.c.
+
 MainBoard is retained as supplied; its missing generated dependencies have not
 yet been prepared. The verified build currently covers Controller only.

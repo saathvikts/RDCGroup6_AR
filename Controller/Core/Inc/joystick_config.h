@@ -2,8 +2,8 @@
 #define JOYSTICK_CONFIG_H
 /* Axis order: J1X, J1Y, J2X, J2Y (ADC1 channels 0, 1, 2, 3). */
 #define JOYSTICK_AXIS_COUNT 4U
-#if JOYSTICK_AXIS_COUNT != 1U && JOYSTICK_AXIS_COUNT != 4U
-#error "JOYSTICK_AXIS_COUNT must be 1 or 4"
+#if JOYSTICK_AXIS_COUNT != 4U
+#error "The TR controller packet requires four joystick axes"
 #endif
 /* Imported tutorial values: approximate centres/Y stops; X endpoints are defaults.
    Replace these with measured calibration for the TR controller. */

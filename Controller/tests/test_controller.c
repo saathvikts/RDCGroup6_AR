@@ -1,6 +1,9 @@
 #include "buttons.h"
 #include "main.h"
+#include "joystick.h"
+#include "adc.h"
 #include <assert.h>
+#include <math.h>
 #include <stdio.h>
 
 GPIO_TypeDef test_port_a = {0}, test_port_b = {1};
@@ -68,9 +71,96 @@ static void TestButtons(void)
     Buttons_Read(110U, NULL);
 }
 
+ADC_HandleTypeDef hadc1;
+static unsigned adc_channel, adc_fail_channel;
+static unsigned adc_fail_stage;
+static uint16_t adc_values[4];
+static HAL_StatusTypeDef calibration_status = HAL_OK;
+
+HAL_StatusTypeDef HAL_ADCEx_Calibration_Start(ADC_HandleTypeDef *adc)
+{
+    assert(adc == &hadc1);
+    return calibration_status;
+}
+HAL_StatusTypeDef HAL_ADC_ConfigChannel(ADC_HandleTypeDef *adc, ADC_ChannelConfTypeDef *c)
+{
+    assert(adc == &hadc1 && c->Channel < 4U);
+    assert(c->Rank == ADC_REGULAR_RANK_1);
+    assert(c->SamplingTime == ADC_SAMPLETIME_71CYCLES_5);
+    adc_channel = c->Channel;
+    return adc_fail_stage == 1 && adc_channel == adc_fail_channel ? HAL_ERROR : HAL_OK;
+}
+HAL_StatusTypeDef HAL_ADC_Start(ADC_HandleTypeDef *adc)
+{
+    assert(adc == &hadc1);
+    return adc_fail_stage == 2 && adc_channel == adc_fail_channel ? HAL_ERROR : HAL_OK;
+}
+HAL_StatusTypeDef HAL_ADC_PollForConversion(ADC_HandleTypeDef *adc, uint32_t timeout)
+{
+    assert(adc == &hadc1 && timeout == 10U);
+    return adc_fail_stage == 3 && adc_channel == adc_fail_channel ? HAL_TIMEOUT : HAL_OK;
+}
+uint32_t HAL_ADC_GetValue(ADC_HandleTypeDef *adc)
+{
+    assert(adc == &hadc1);
+    return adc_values[adc_channel];
+}
+HAL_StatusTypeDef HAL_ADC_Stop(ADC_HandleTypeDef *adc)
+{
+    assert(adc == &hadc1);
+    return adc_fail_stage == 4 && adc_channel == adc_fail_channel ? HAL_ERROR : HAL_OK;
+}
+
+static void TestJoystick(void)
+{
+    Joystick_State s;
+    assert(Joystick_Start());
+    calibration_status = HAL_ERROR;
+    assert(!Joystick_Start());
+    calibration_status = HAL_OK;
+
+    for (unsigned i = 0; i < 4; ++i) adc_values[i] = 2000;
+    assert(Joystick_Read(&s) && s.valid);
+    for (unsigned i = 0; i < 4; ++i) {
+        assert(s.raw[i] == 2000 && s.normalized[i] == 0.0f);
+    }
+    adc_values[0] = 1880; adc_values[1] = 2120;
+    adc_values[2] = 2120; adc_values[3] = 1880;
+    assert(Joystick_Read(&s));
+    for (unsigned i = 0; i < 4; ++i) assert(s.normalized[i] == 0.0f);
+
+    for (unsigned i = 0; i < 4; ++i) adc_values[i] = 0;
+    assert(Joystick_Read(&s));
+    assert(s.normalized[0] == -1.0f && s.normalized[1] == 1.0f);
+    assert(s.normalized[2] == -1.0f && s.normalized[3] == 1.0f);
+    adc_values[0] = 4095; adc_values[1] = 4000;
+    adc_values[2] = 4095; adc_values[3] = 4095;
+    assert(Joystick_Read(&s));
+    assert(s.normalized[0] == 1.0f && s.normalized[1] == -1.0f);
+    assert(s.normalized[2] == 1.0f && s.normalized[3] == -1.0f);
+    adc_values[0] = 1000;
+    assert(Joystick_Read(&s));
+    assert(fabsf(s.normalized[0] - (-880.0f / 1880.0f)) < 0.00001f);
+
+    /* Each ADC operation can fail on any axis; never publish partial/stale data. */
+    for (adc_fail_stage = 1; adc_fail_stage <= 4; ++adc_fail_stage) {
+        for (adc_fail_channel = 0; adc_fail_channel < 4; ++adc_fail_channel) {
+            assert(!Joystick_Read(&s) && !s.valid);
+            for (unsigned i = 0; i < 4; ++i)
+                assert(s.raw[i] == 0 && s.normalized[i] == 0.0f);
+        }
+    }
+    adc_fail_stage = 0;
+    adc_values[2] = 5000;
+    assert(!Joystick_Read(&s) && !s.valid);
+    assert(!Joystick_Read(NULL));
+}
+
 int main(void)
 {
     TestButtons();
     puts("PASS: eight-button mapping, debounce, edges, durations and timer rollover");
+    TestJoystick();
+    puts("PASS: joystick calibration, deadzone, normalization, directions and ADC failures");
     return 0;
 }

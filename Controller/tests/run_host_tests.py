@@ -16,6 +16,7 @@ with tempfile.TemporaryDirectory(prefix="rdc-controller-tests-") as build:
         f"-I{tests / 'stubs'}", f"-I{controller / 'Core/Inc'}",
         str(tests / "test_controller.c"),
         str(controller / "Core/Src/buttons.c"),
+        str(controller / "Core/Src/joystick.c"), "-lm",
         "-o", str(executable),
     ], check=True)
     subprocess.run([str(executable)], check=True)
