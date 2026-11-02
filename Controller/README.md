@@ -14,6 +14,12 @@ bounded polling wait. `Joystick_Start()` calibrates ADC1 once during startup;
 startup enters `Error_Handler()` if calibration fails. The main loop does not
 yet request samples or normalize joystick values.
 
+`Core/Inc/joystick_config.h` holds the imported tutorial settings for four axes:
+centres of 2000 counts, a 120-count deadzone, and reversed Y directions. X
+endpoints remain defaults and Y endpoints/centres are approximate. These values
+still need measured TR calibration. The raw reader includes this header; the
+normalization and direction settings will take effect when processing is added.
+
 USART1 remains on PB6 TX / PB7 RX at 115200 baud with its interrupt enabled.
 The connected HC-05 modules still need their actual settings and wiring checked.
 

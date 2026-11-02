@@ -1,4 +1,5 @@
 #include "joystick.h"
+#include "joystick_config.h"
 #include "main.h"
 #include "adc.h"
 
