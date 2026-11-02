@@ -1,0 +1,14 @@
+# Build outputs and local editor state. Keep source dependencies in Git.
+build/
+mx.scratch
+.DS_Store
+.settings/
+.vscode/
+.mxproject
+.cache/
+*.o
+*.obj
+*.elf
+*.bin
+*.hex
+*.map

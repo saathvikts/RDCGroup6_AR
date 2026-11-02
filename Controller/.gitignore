@@ -1,0 +1,7 @@
+build/
+mx.scratch
+.DS_Store
+.settings/
+.vscode/
+.mxproject
+.cache/
