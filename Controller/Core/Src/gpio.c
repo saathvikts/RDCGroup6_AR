@@ -62,10 +62,8 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : Joystick1_X_Pin Joystick1_Y_Pin Joystick2_X_Pin Joystick2_Y_Pin
-                           ADC1_IN4_Pin PA6 */
-  GPIO_InitStruct.Pin = Joystick1_X_Pin|Joystick1_Y_Pin|Joystick2_X_Pin|Joystick2_Y_Pin
-                          |ADC1_IN4_Pin|GPIO_PIN_6;
+  /*Configure GPIO pins : ADC1_IN4_Pin PA6 */
+  GPIO_InitStruct.Pin = ADC1_IN4_Pin|GPIO_PIN_6;
   GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
