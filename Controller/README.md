@@ -9,7 +9,10 @@ joystick is J1 before assigning left/right driving controls.
 Conversions use software triggering, a single conversion at Rank 1, and
 71.5 ADC-clock sampling cycles. Scan mode, continuous conversion, ADC DMA and
 ADC interrupts are disabled. The reading code will select each channel in turn;
-this configuration commit does not yet acquire or normalize joystick samples.
+`Joystick_ReadChannel()` selects one channel and obtains its raw value with a
+bounded polling wait. `Joystick_Start()` calibrates ADC1 once during startup;
+startup enters `Error_Handler()` if calibration fails. The main loop does not
+yet request samples or normalize joystick values.
 
 USART1 remains on PB6 TX / PB7 RX at 115200 baud with its interrupt enabled.
 The connected HC-05 modules still need their actual settings and wiring checked.

@@ -11,5 +11,10 @@ Controller dependencies were generated with STM32CubeMX 6.18.1 using the
 existing Controller.ioc and STM32Cube FW_F1 V1.8.7. The generated HAL and CMSIS
 sources retain their supplied licences under Controller/Drivers.
 
+Controller/Core/Src/joystick.c and Controller/Core/Inc/joystick.h were adapted
+from the user's existing advanced-tutorial-1-Advanced-Embedded-Systems project,
+under projects/Controller. The reader uses 71.5-cycle sampling to match the TR
+ADC configuration.
+
 MainBoard is retained as supplied; its missing generated dependencies have not
 yet been prepared. The verified build currently covers Controller only.

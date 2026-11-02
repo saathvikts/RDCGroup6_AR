@@ -27,6 +27,7 @@
 /* USER CODE BEGIN Includes */
 #include "lcd/lcd.h"
 #include "lcd/lcd_graphics.h"
+#include "joystick.h"
 
 /* USER CODE END Includes */
 
@@ -95,6 +96,10 @@ int main(void)
   MX_USART1_UART_Init();
   MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
+  if (!Joystick_Start())
+  {
+    Error_Handler();
+  }
   tft_init(PIN_ON_TOP, BLACK, WHITE, CYAN, DARK_GREY);
 
   /* USER CODE END 2 */
