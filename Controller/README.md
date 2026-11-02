@@ -37,14 +37,32 @@ Build from this Controller folder with `cmake --preset Debug`, followed by
 
 ### Controller application flow
 
-After GPIO/ADC/UART startup, main.c initializes the button reader and transmitter.
-The main loop calls Buttons_Read() frequently, Joystick_Read() about every 20 ms,
-and Controller_TryTransmit() on each pass. The transmitter schedules at most one
-attempt per 20 ms and uses HAL_UART_Transmit_IT(). Its static packet buffer stays
-unchanged until the TX-complete or abort-complete callback. A UART error or a
-100 ms local TX stall requests HAL_UART_AbortTransmit_IT() before the next frame.
-This timeout monitors the local UART only; it does not establish Bluetooth link
-health or prove that the mainboard received a frame.
+After GPIO/ADC/UART startup, main.c reads the initial inputs, publishes them and
+calls Controller_StartTransmit() once, before while (1). This starts the first
+15-byte transfer using HAL_UART_Transmit_IT(). HAL_UART_TxCpltCallback() forwards
+USART1 completion to Controller_TransmitComplete(), which starts the next frame.
+The STM32 HAL marks UART ready before calling this callback.
+
+The main loop calls Buttons_Read() frequently and Joystick_Read() about every
+20 ms. It calls Controller_PublishInputs() after a joystick sample or button
+state change; this publishes input bytes without starting UART. Two alternating
+snapshot buffers and a memory barrier keep partially updated inputs out of the
+callback. A separate static TX buffer remains unchanged throughout each transfer.
+Callbacks only copy prepared bytes, update the sequence/CRC, and start UART;
+floating-point conversion, normalization and ADC polling stay in the main loop.
+
+Frames stream continuously with no 20 ms transmission delay. At the configured
+115200 baud, 8N1, a 15-byte frame takes about 1.3 ms on UART; unchanged input
+samples therefore appear in multiple frames. The actual HC-05 radio throughput
+and receiver still need checking on hardware.
+
+HAL_UART_ErrorCallback() requests an interrupt-mode transmit abort, and the
+abort-complete callback starts the next frame. A failed start/restart/abort stops
+streaming and causes main.c to enter Error_Handler(), requiring reset. The chain
+also stops if the latest published inputs reach 100 ms old, so an unresponsive
+input loop cannot keep transmitting stale movement requests. The mainboard must
+still implement its own receive timeout and zero drive requests on connection
+loss. UART completion alone does not prove Bluetooth delivery.
 
 ADC acquisition uses the existing bounded polling implementation (10 ms timeout
 per conversion wait). UART transmission and its recovery are interrupt-based.
@@ -92,17 +110,11 @@ estimate holds from received transitions. Exact durations and guaranteed capture
 of short taps across lost frames need a later protocol extension with timing or
 press counters. No physical action has been assigned to a numbered button yet.
 
-### Verification
+### Build and hardware checks
 
-Build firmware with `cmake --build --preset Debug` from Controller. Run
-`python tests/run_host_tests.py` with host GCC installed to exercise the actual
-input/transmitter C sources against fake GPIO, ADC and UART functions. Tests
-cover all 256 button combinations, bounce, press/hold/release, timer rollover,
-joystick endpoints/deadzones/signs, ADC failures, a known CRC vector, wire byte
-order, in-flight buffer preservation, UART failures, abort recovery and sequence
-rollover. These PC tests do not emulate hardware interrupts, sensor voltages,
-ST-Link flashing or the HC-05 radio link. Hardware calibration and end-to-end
-mainboard reception still need testing.
+Build firmware with `cmake --build --preset Debug` from Controller. Hardware
+calibration, ST-Link flashing, UART/radio throughput and end-to-end mainboard
+reception still need checking on the actual boards.
 
 ## Tutorial resources
 

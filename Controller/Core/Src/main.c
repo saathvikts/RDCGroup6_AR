@@ -73,7 +73,7 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 
 void HAL_UART_AbortTransmitCpltCallback(UART_HandleTypeDef *huart)
 {
-  if (huart == &huart1) Controller_TransmitComplete();
+  if (huart == &huart1) Controller_TransmitAbortComplete();
 }
 
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
@@ -122,8 +122,15 @@ int main(void)
   }
   tft_init(PIN_ON_TOP, BLACK, WHITE, CYAN, DARK_GREY);
   Buttons_Init(HAL_GetTick());
-  last_joystick_read = HAL_GetTick() - INPUT_SAMPLE_PERIOD_MS;
-  Controller_LinkInit(HAL_GetTick());
+  Buttons_Read(HAL_GetTick(), &buttons);
+  Joystick_Read(&joystick);
+  last_joystick_read = HAL_GetTick();
+  Controller_LinkInit();
+  Controller_PublishInputs(buttons.down, &joystick);
+  if (!Controller_StartTransmit())
+  {
+    Error_Handler();
+  }
 
   /* USER CODE END 2 */
 
@@ -135,13 +142,23 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
     uint32_t now = HAL_GetTick();
+    uint8_t previous_buttons = buttons.down;
+    bool publish_inputs = false;
     Buttons_Read(now, &buttons);
     if ((uint32_t)(now - last_joystick_read) >= INPUT_SAMPLE_PERIOD_MS)
     {
       last_joystick_read = now;
       Joystick_Read(&joystick);
+      publish_inputs = true;
     }
-    Controller_TryTransmit(HAL_GetTick(), buttons.down, &joystick);
+    if (publish_inputs || buttons.down != previous_buttons)
+    {
+      Controller_PublishInputs(buttons.down, &joystick);
+    }
+    if (Controller_TransmitFailed())
+    {
+      Error_Handler();
+    }
   }
   /* USER CODE END 3 */
 }

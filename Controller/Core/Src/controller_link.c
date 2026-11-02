@@ -1,15 +1,20 @@
 #include "controller_link.h"
 #include "usart.h"
 #include <math.h>
+#include <string.h>
 
-/* HAL keeps this buffer's address until TX completes or abort completes. */
+/* HAL retains this buffer until TX completes or abort completes. */
 static uint8_t tx_packet[CONTROLLER_PACKET_SIZE];
+/* Main writes an inactive slot, then publishes its index atomically. The ISR
+   reads the published slot and copies it into the separate TX buffer. */
+static uint8_t prepared[2][CONTROLLER_PACKET_SIZE];
+static uint32_t prepared_at[2];
+static volatile uint32_t published_index;
 static volatile bool tx_busy;
-static volatile bool tx_aborting;
-static volatile bool tx_error;
+static volatile bool streaming;
+static volatile bool recovering;
+static volatile bool tx_failed;
 static uint8_t sequence;
-static uint32_t last_attempt;
-static uint32_t tx_started;
 
 uint8_t Controller_Crc8(const uint8_t *data, size_t length)
 {
@@ -27,7 +32,7 @@ uint8_t Controller_Crc8(const uint8_t *data, size_t length)
     return crc;
 }
 
-static void BuildPacket(uint8_t buttons, const Joystick_State *joystick)
+static void PrepareInputs(uint8_t *packet, uint8_t buttons, const Joystick_State *joystick)
 {
     bool valid = joystick != NULL && joystick->valid;
     if (valid) {
@@ -37,69 +42,106 @@ static void BuildPacket(uint8_t buttons, const Joystick_State *joystick)
         }
     }
 
-    tx_packet[0] = 0xA5U;
-    tx_packet[1] = 0x5AU;
-    tx_packet[2] = 1U;  /* Protocol version. */
-    tx_packet[3] = sequence;
-    tx_packet[4] = valid ? CONTROLLER_FLAG_JOYSTICK_VALID : 0U;
-    tx_packet[5] = buttons;
+    packet[0] = 0xA5U;
+    packet[1] = 0x5AU;
+    packet[2] = 1U;
+    packet[3] = 0U;  /* Sequence is filled when TX starts. */
+    packet[4] = valid ? CONTROLLER_FLAG_JOYSTICK_VALID : 0U;
+    packet[5] = buttons;
     for (unsigned i = 0; i < JOYSTICK_AXIS_COUNT; ++i) {
         float axis = valid ? joystick->normalized[i] : 0.0f;
         int16_t value = (int16_t)(axis * 1000.0f + (axis < 0.0f ? -0.5f : 0.5f));
         uint16_t wire = (uint16_t)value;
-        tx_packet[6U + 2U * i] = (uint8_t)wire;
-        tx_packet[7U + 2U * i] = (uint8_t)(wire >> 8);
+        packet[6U + 2U * i] = (uint8_t)wire;
+        packet[7U + 2U * i] = (uint8_t)(wire >> 8);
     }
-    tx_packet[14] = Controller_Crc8(tx_packet, 14U);
+    packet[14] = 0U;  /* CRC includes the sequence, so fill it at TX start. */
 }
 
-void Controller_LinkInit(uint32_t now)
+void Controller_LinkInit(void)
 {
     tx_busy = false;
-    tx_aborting = false;
-    tx_error = false;
+    streaming = false;
+    recovering = false;
+    tx_failed = false;
     sequence = 0;
-    last_attempt = now - CONTROLLER_TX_PERIOD_MS;
-    tx_started = now;
+    PrepareInputs(prepared[0], 0U, NULL);
+    prepared_at[0] = HAL_GetTick();
+    __DMB();
+    published_index = 0U;
 }
 
-bool Controller_TryTransmit(uint32_t now, uint8_t buttons, const Joystick_State *joystick)
+void Controller_PublishInputs(uint8_t buttons, const Joystick_State *joystick)
 {
-    if (tx_busy) {
-        /* Recovery concerns the local UART, not Bluetooth acknowledgements. */
-        if (!tx_aborting && (tx_error ||
-            (uint32_t)(now - tx_started) >= CONTROLLER_TX_TIMEOUT_MS)) {
-            tx_aborting = true;
-            if (HAL_UART_AbortTransmit_IT(&huart1) != HAL_OK) {
-                tx_aborting = false;
-            }
-        }
+    uint32_t next = published_index ^ 1U;
+    PrepareInputs(prepared[next], buttons, joystick);
+    prepared_at[next] = HAL_GetTick();
+    /* Make all writes visible before the ISR can select this completed slot. */
+    __DMB();
+    published_index = next;
+}
+
+static bool StartNextPacket(void)
+{
+    uint32_t current = published_index;
+    __DMB();
+    /* A callback chain must not keep stale controls alive if main stops updating. */
+    if ((uint32_t)(HAL_GetTick() - prepared_at[current]) >= CONTROLLER_INPUT_MAX_AGE_MS) {
+        streaming = false;
+        tx_failed = true;
         return false;
     }
-    if ((uint32_t)(now - last_attempt) < CONTROLLER_TX_PERIOD_MS) return false;
-
-    last_attempt = now;
-    BuildPacket(buttons, joystick);
-    tx_started = now;
-    tx_error = false;
+    memcpy(tx_packet, prepared[current], sizeof(tx_packet));
+    tx_packet[3] = sequence++;
+    tx_packet[14] = Controller_Crc8(tx_packet, 14U);
+    tx_failed = false;
     tx_busy = true;  /* Set before HAL can enable the interrupt. */
     if (HAL_UART_Transmit_IT(&huart1, tx_packet, CONTROLLER_PACKET_SIZE) != HAL_OK) {
+        --sequence;
         tx_busy = false;
+        streaming = false;
+        tx_failed = true;
         return false;
     }
-    ++sequence;  /* Unsigned byte wraps from 255 to 0. */
     return true;
+}
+
+bool Controller_StartTransmit(void)
+{
+    if (streaming || tx_busy) return false;
+    streaming = true;
+    return StartNextPacket();
+}
+
+bool Controller_TransmitFailed(void)
+{
+    return tx_failed;
 }
 
 void Controller_TransmitComplete(void)
 {
-    tx_error = false;
-    tx_aborting = false;
+    if (!streaming || recovering || !tx_busy) return;
     tx_busy = false;
+    /* HAL has marked UART ready before invoking its TX-complete callback. */
+    StartNextPacket();
+}
+
+void Controller_TransmitAbortComplete(void)
+{
+    if (!recovering) return;
+    recovering = false;
+    tx_busy = false;
+    if (streaming) StartNextPacket();
 }
 
 void Controller_TransmitError(void)
 {
-    /* Do not release or overwrite an in-flight buffer from an error callback. */
-    if (tx_busy) tx_error = true;
+    if (!streaming || recovering) return;
+    recovering = true;
+    /* Keep TX memory unchanged until abort completion. Callbacks perform no
+       ADC acquisition, normalization, waits or unbounded retry loops. */
+    if (HAL_UART_AbortTransmit_IT(&huart1) != HAL_OK) {
+        streaming = false;
+        tx_failed = true;
+    }
 }
