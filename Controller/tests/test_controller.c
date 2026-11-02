@@ -2,9 +2,12 @@
 #include "main.h"
 #include "joystick.h"
 #include "adc.h"
+#include "controller_link.h"
+#include "usart.h"
 #include <assert.h>
 #include <math.h>
 #include <stdio.h>
+#include <string.h>
 
 GPIO_TypeDef test_port_a = {0}, test_port_b = {1};
 static uint16_t gpio_a = UINT16_MAX, gpio_b = UINT16_MAX;
@@ -156,11 +159,155 @@ static void TestJoystick(void)
     assert(!Joystick_Read(NULL));
 }
 
+UART_HandleTypeDef huart1;
+static uint8_t *uart_data;
+static uint16_t uart_size;
+static unsigned uart_calls, abort_calls;
+static HAL_StatusTypeDef uart_status = HAL_OK, abort_status = HAL_OK;
+static int defer_abort;
+
+HAL_StatusTypeDef HAL_UART_Transmit_IT(UART_HandleTypeDef *uart, uint8_t *data, uint16_t size)
+{
+    assert(uart == &huart1);
+    ++uart_calls;
+    uart_data = data;
+    uart_size = size;
+    return uart_status;
+}
+HAL_StatusTypeDef HAL_UART_AbortTransmit_IT(UART_HandleTypeDef *uart)
+{
+    assert(uart == &huart1);
+    ++abort_calls;
+    if (abort_status == HAL_OK && !defer_abort) Controller_TransmitComplete();
+    return abort_status;
+}
+
+static void AssertNeutralPacket(void)
+{
+    assert(uart_data[4] == 0);
+    for (unsigned i = 6; i < 14; ++i) assert(uart_data[i] == 0);
+}
+
+static void TestLink(void)
+{
+    const uint8_t check[] = "123456789";
+    assert(Controller_Crc8(check, 9) == 0xF4U);
+    assert(Controller_Crc8(NULL, 0) == 0U);
+
+    Joystick_State s = {.valid = true, .normalized = {-1.0f, 1.0f, 0.5f, -0.5f}};
+    Controller_LinkInit(100);
+    assert(Controller_TryTransmit(100, 0x81, &s));
+    assert(uart_calls == 1 && uart_size == 15);
+    const uint8_t expected[] = {
+        0xA5, 0x5A, 1, 0, 1, 0x81,
+        0x18, 0xFC, 0xE8, 0x03, 0xF4, 0x01, 0x0C, 0xFE
+    };
+    assert(memcmp(uart_data, expected, sizeof(expected)) == 0);
+    assert(uart_data[14] == Controller_Crc8(uart_data, 14));
+
+    uint8_t saved[CONTROLLER_PACKET_SIZE];
+    memcpy(saved, uart_data, sizeof(saved));
+    s.normalized[0] = 0.25f;
+    assert(!Controller_TryTransmit(120, 0xFF, &s));
+    assert(uart_calls == 1 && memcmp(uart_data, saved, sizeof(saved)) == 0);
+
+    /* Every single-bit data error in this packet changes its CRC. */
+    for (unsigned i = 0; i < 14; ++i) {
+        for (unsigned bit = 0; bit < 8; ++bit) {
+            uint8_t damaged[15];
+            memcpy(damaged, saved, sizeof(damaged));
+            damaged[i] ^= (uint8_t)(1U << bit);
+            assert(Controller_Crc8(damaged, 14) != damaged[14]);
+        }
+    }
+
+    Controller_TransmitComplete();
+    assert(Controller_TryTransmit(120, 0xFF, &s));
+    assert(uart_data[3] == 1 && uart_data[5] == 0xFF);
+    assert(uart_data[6] == 250 && uart_data[7] == 0);
+    Controller_TransmitComplete();
+    unsigned calls_before = uart_calls;
+    assert(!Controller_TryTransmit(139, 0, &s));
+    assert(uart_calls == calls_before);
+
+    s.valid = false;
+    assert(Controller_TryTransmit(140, 0x55, &s));
+    AssertNeutralPacket();
+    assert(uart_data[5] == 0x55);
+    Controller_TransmitComplete();
+    s.valid = true; s.normalized[2] = NAN;
+    assert(Controller_TryTransmit(160, 0, &s));
+    AssertNeutralPacket();
+    Controller_TransmitComplete();
+    s.normalized[2] = 2.0f;
+    assert(Controller_TryTransmit(180, 0, &s));
+    AssertNeutralPacket();
+    Controller_TransmitComplete();
+
+    /* HAL_BUSY does not wedge the sender or advance the sequence. */
+    Controller_LinkInit(200);
+    uart_status = HAL_BUSY;
+    assert(!Controller_TryTransmit(200, 0, NULL));
+    calls_before = uart_calls;
+    uart_status = HAL_OK;
+    assert(!Controller_TryTransmit(219, 0, NULL) && uart_calls == calls_before);
+    assert(Controller_TryTransmit(220, 0, NULL));
+    assert(uart_data[3] == 0);
+    AssertNeutralPacket();
+
+    /* No completion: abort asynchronously before reusing the buffer. */
+    unsigned aborts_before = abort_calls;
+    memcpy(saved, uart_data, sizeof(saved));
+    assert(!Controller_TryTransmit(319, 3, &s));
+    assert(abort_calls == aborts_before);
+    defer_abort = 1;
+    assert(!Controller_TryTransmit(320, 3, &s));
+    assert(abort_calls == aborts_before + 1);
+    assert(!Controller_TryTransmit(321, 3, &s));
+    assert(abort_calls == aborts_before + 1);
+    assert(memcmp(saved, uart_data, sizeof(saved)) == 0);
+    Controller_TransmitComplete(); /* Delayed abort-complete callback. */
+    assert(Controller_TryTransmit(322, 3, NULL));
+
+    /* An error requests recovery in the main loop, without releasing TX early. */
+    Controller_TransmitError();
+    defer_abort = 0;
+    assert(!Controller_TryTransmit(323, 4, NULL));
+    assert(abort_calls == aborts_before + 2);
+    assert(Controller_TryTransmit(342, 4, NULL));
+    Controller_TransmitComplete();
+
+    /* If abort fails, retain the buffer and retry recovery on the next call. */
+    assert(Controller_TryTransmit(362, 0, NULL));
+    abort_status = HAL_ERROR;
+    assert(!Controller_TryTransmit(462, 0, NULL));
+    abort_status = HAL_OK;
+    assert(!Controller_TryTransmit(463, 0, NULL));
+    assert(Controller_TryTransmit(464, 0, NULL));
+    Controller_TransmitComplete();
+
+    /* Period and sequence rollover. */
+    Controller_LinkInit(UINT32_MAX - 5U);
+    assert(Controller_TryTransmit(UINT32_MAX - 5U, 0, NULL));
+    Controller_TransmitComplete();
+    assert(!Controller_TryTransmit(13, 0, NULL));
+    assert(Controller_TryTransmit(14, 0, NULL));
+    Controller_TransmitComplete();
+    Controller_LinkInit(0);
+    for (unsigned i = 0; i < 258; ++i) {
+        assert(Controller_TryTransmit(i * 20U, 0, NULL));
+        assert(uart_data[3] == (uint8_t)i);
+        Controller_TransmitComplete();
+    }
+}
+
 int main(void)
 {
     TestButtons();
     puts("PASS: eight-button mapping, debounce, edges, durations and timer rollover");
     TestJoystick();
     puts("PASS: joystick calibration, deadzone, normalization, directions and ADC failures");
+    TestLink();
+    puts("PASS: CRC, packet encoding, TX buffer lifetime, UART failures and rollover");
     return 0;
 }

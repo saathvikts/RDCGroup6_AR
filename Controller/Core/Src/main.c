@@ -29,6 +29,7 @@
 #include "lcd/lcd_graphics.h"
 #include "joystick.h"
 #include "buttons.h"
+#include "controller_link.h"
 
 /* USER CODE END Includes */
 
@@ -65,6 +66,20 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
+{
+  if (huart == &huart1) Controller_TransmitComplete();
+}
+
+void HAL_UART_AbortTransmitCpltCallback(UART_HandleTypeDef *huart)
+{
+  if (huart == &huart1) Controller_TransmitComplete();
+}
+
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
+{
+  if (huart == &huart1) Controller_TransmitError();
+}
 
 /* USER CODE END 0 */
 
@@ -108,6 +123,7 @@ int main(void)
   tft_init(PIN_ON_TOP, BLACK, WHITE, CYAN, DARK_GREY);
   Buttons_Init(HAL_GetTick());
   last_joystick_read = HAL_GetTick() - INPUT_SAMPLE_PERIOD_MS;
+  Controller_LinkInit(HAL_GetTick());
 
   /* USER CODE END 2 */
 
@@ -125,6 +141,7 @@ int main(void)
       last_joystick_read = now;
       Joystick_Read(&joystick);
     }
+    Controller_TryTransmit(HAL_GetTick(), buttons.down, &joystick);
   }
   /* USER CODE END 3 */
 }

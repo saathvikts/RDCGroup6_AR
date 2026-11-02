@@ -48,6 +48,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/lcd_graphics.c
     Core/Src/joystick.c
     Core/Src/buttons.c
+    Core/Src/controller_link.c
     # Add user sources here
 )
 
