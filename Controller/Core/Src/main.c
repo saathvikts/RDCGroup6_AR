@@ -28,6 +28,7 @@
 #include "lcd/lcd.h"
 #include "lcd/lcd_graphics.h"
 #include "joystick.h"
+#include "buttons.h"
 
 /* USER CODE END Includes */
 
@@ -49,6 +50,7 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
+static Buttons_State buttons;
 
 /* USER CODE END PV */
 
@@ -101,6 +103,7 @@ int main(void)
     Error_Handler();
   }
   tft_init(PIN_ON_TOP, BLACK, WHITE, CYAN, DARK_GREY);
+  Buttons_Init(HAL_GetTick());
 
   /* USER CODE END 2 */
 
@@ -111,6 +114,7 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    Buttons_Read(HAL_GetTick(), &buttons);
   }
   /* USER CODE END 3 */
 }
