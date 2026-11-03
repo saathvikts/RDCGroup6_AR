@@ -1,125 +1,87 @@
-# Controller Resources
+# Controller
 
-## Current TR configuration
+This firmware reads eight buttons and four joystick axes, sends those values
+with CRC-8 through USART1, and displays a transmitted packet on the controller TFT.
 
-ADC1 is configured for the existing joystick connections: PA0/IN0 = J1X,
-PA1/IN1 = J1Y, PA2/IN2 = J2X, and PA3/IN3 = J2Y. Confirm which physical
-joystick is J1 before assigning left/right driving controls.
+## Main loop
 
-Conversions use software triggering, a single conversion at Rank 1, and
-71.5 ADC-clock sampling cycles. Scan mode, continuous conversion, ADC DMA and
-ADC interrupts are disabled. The reading code will select each channel in turn;
-`Joystick_ReadChannel()` selects one channel and obtains its raw value with a
-bounded polling wait. `Joystick_Start()` calibrates ADC1 once during startup;
-startup enters `Error_Handler()` if calibration fails. The main loop requests
-all four axes about every 20 ms. `Joystick_Read()` provides raw values and
-normalized values in [-1, +1], applies the deadzone and Y directions once, and
-clears all values plus its validity flag when acquisition fails.
+1. `Buttons_Read()` returns the eight raw button states in one byte.
+2. `Joystick_Read()` reads J1X/J1Y/J2X/J2Y and normalizes them to [-1, +1].
+3. `Controller_SetInputs()` packs the values and calculates CRC-8.
+4. `DisplayInputs()` shows a transmitted packet, refreshing about every 100 ms.
 
-`Core/Inc/joystick_config.h` holds the imported tutorial settings for four axes:
-centres of 2000 counts, a 120-count deadzone, and reversed Y directions. X
-endpoints remain defaults and Y endpoints/centres are approximate. These values
-still need measured TR calibration. These settings now control normalization.
+Transmission starts once before `while (1)` using `Controller_Transmit()` and
+`HAL_UART_Transmit_IT()`. `HAL_UART_TxCpltCallback()` starts the next packet after
+the previous one finishes. The loop does not start transmissions. There is no
+abort/restart handling, stale-input timer, button event/hold tracking, debounce,
+sequence number, version field or status field.
 
-`Buttons_Read()` polls Button1 through Button8 using the existing active-low
-convention, accepts a change after 20 ms of stability, and records state, press
-and release edges, current hold durations and the last completed hold durations.
-Bit 0 represents Button1 and bit 7 represents Button8. The joystick push inputs
-and the two LimitSwitch-labelled inputs are not included in these eight buttons.
+The transmitter keeps two ten-byte arrays: the latest input packet and the
+packet HAL is sending. Only the completed-transfer callback changes the send
+array. A short protected copy prevents an interrupt from seeing half an update.
+The TFT copies the send array so its displayed values and CRC belong together.
+Only UART transmission is interrupt-driven; ADC and TFT use their existing APIs.
 
-USART1 remains on PB6 TX / PB7 RX at 115200 baud with its interrupt enabled.
-The connected HC-05 modules still need their actual settings and wiring checked.
+## Connections and calibration
 
-Build from this Controller folder with `cmake --preset Debug`, followed by
-`cmake --build --preset Debug`. The output is `build/Debug/Controller.elf`.
+| Input | Pin | ADC channel |
+| --- | --- | --- |
+| J1X | PA0 | IN0 |
+| J1Y | PA1 | IN1 |
+| J2X | PA2 | IN2 |
+| J2Y | PA3 | IN3 |
 
-## Application and packet
+ADC1 uses software-triggered single conversions with 71.5-cycle sampling.
+`Joystick_Start()` calibrates the ADC once at startup. `joystick_config.h` holds
+the imported centres/endpoints, deadzone and Y directions. Physical joystick
+calibration still needs measuring. Failed ADC acquisition produces zero axes.
 
-### Controller application flow
+Button bits 0 through 7 correspond to Button1 through Button8. The existing
+board convention treats a LOW input as pressed. Joystick push switches and the
+LimitSwitch-labelled inputs are not included. USART1 uses PB6 TX / PB7 RX,
+115200 baud, 8N1; confirm the HC-05 settings and physical connections.
 
-After GPIO/ADC/UART startup, main.c reads the initial inputs, publishes them and
-calls Controller_StartTransmit() once, before while (1). This starts the first
-15-byte transfer using HAL_UART_Transmit_IT(). HAL_UART_TxCpltCallback() forwards
-USART1 completion to Controller_TransmitComplete(), which starts the next frame.
-The STM32 HAL marks UART ready before calling this callback.
+## Packet: 10 bytes
 
-The main loop calls Buttons_Read() frequently and Joystick_Read() about every
-20 ms. It calls Controller_PublishInputs() after a joystick sample or button
-state change; this publishes input bytes without starting UART. Two alternating
-snapshot buffers and a memory barrier keep partially updated inputs out of the
-callback. A separate static TX buffer remains unchanged throughout each transfer.
-Callbacks only copy prepared bytes, update the sequence/CRC, and start UART;
-floating-point conversion, normalization and ADC polling stay in the main loop.
-
-Frames stream continuously with no 20 ms transmission delay. At the configured
-115200 baud, 8N1, a 15-byte frame takes about 1.3 ms on UART; unchanged input
-samples therefore appear in multiple frames. The actual HC-05 radio throughput
-and receiver still need checking on hardware.
-
-HAL_UART_ErrorCallback() requests an interrupt-mode transmit abort, and the
-abort-complete callback starts the next frame. A failed start/restart/abort stops
-streaming and causes main.c to enter Error_Handler(), requiring reset. The chain
-also stops if the latest published inputs reach 100 ms old, so an unresponsive
-input loop cannot keep transmitting stale movement requests. The mainboard must
-still implement its own receive timeout and zero drive requests on connection
-loss. UART completion alone does not prove Bluetooth delivery.
-
-ADC acquisition uses the existing bounded polling implementation (10 ms timeout
-per conversion wait). UART transmission and its recovery are interrupt-based.
-No HAL_Delay() is used in the application loop. The controller TFT is initialized
-but no new diagnostic screen is drawn yet. MainBoard firmware is unchanged.
-
-### Controller packet, version 1
-
-Each frame is exactly 15 bytes. The eight button values occupy one byte; each
-of the four normalized axes is rounded to a signed integer from -1000 to +1000.
-For example, -1000 represents -1.0 and 500 represents +0.5. Axis integers use
-16-bit two's-complement representation, low byte first. Serialize fields
-explicitly; do not transmit a C struct's memory layout.
-
-| Offset | Meaning |
+| Offset | Value |
 | --- | --- |
-| 0-1 | Start bytes A5 5A (hexadecimal) |
-| 2 | Version = 1 |
-| 3 | Sequence byte; increments on successful TX start, wraps 255 to 0 |
-| 4 | Flags: bit 0 = all joystick axes valid; other bits zero |
-| 5 | Buttons: bit 0 = Button1, ..., bit 7 = Button8; 1 = pressed |
-| 6-7 | J1X, signed 16-bit, low byte first |
-| 8-9 | J1Y, signed 16-bit, low byte first |
-| 10-11 | J2X, signed 16-bit, low byte first |
-| 12-13 | J2Y, signed 16-bit, low byte first |
-| 14 | CRC-8 over bytes 0 through 13 |
+| 0 | Eight buttons: bit 0 = Button1, ..., bit 7 = Button8; 1 = pressed |
+| 1-2 | J1X |
+| 3-4 | J1Y |
+| 5-6 | J2X |
+| 7-8 | J2Y |
+| 9 | CRC-8 over bytes 0 through 8 |
 
-CRC settings: polynomial 0x07, initial value 0x00, no input/output reflection,
-final XOR 0x00 (CRC-8/SMBUS). The ASCII bytes `123456789` produce 0xF4.
-Invalid ADC acquisition or an invalid normalized value clears flag bit 0 and
-sends four zero axes; button states can still be sent.
+Each axis is a signed 16-bit integer, low byte first, rounded to [-1000, +1000].
+For example, -1000 represents -1.0 and 500 represents +0.5. There are no start
+markers or additional fields. The mainboard receiver must use this ten-byte
+layout, replacing the earlier fifteen-byte format.
 
-The future receiver must buffer full frames, validate version/flags/axis ranges
-and CRC, and track sequence freshness including wrap/restart. Header bytes may
-also occur inside the payload: do not restart unconditionally whenever A5 5A
-appears during a frame. After invalid framing/CRC, search again with a sliding
-window. Only fresh accepted frames should refresh its communication timeout.
-Mainboard drive requests must become zero on invalid joystick status or timeout;
-neutral-stick recovery and suppression of synthetic button presses on reconnect
-remain mainboard work.
+CRC-8 settings: polynomial 0x07, initial value 0x00, no reflection, final XOR
+0x00. The ASCII bytes `123456789` produce 0xF4.
 
-These are snapshots of button states. Raw joystick counts and local button
-edge/hold-time fields are not transmitted in version 1. The mainboard can
-estimate holds from received transitions. Exact durations and guaranteed capture
-of short taps across lost frames need a later protocol extension with timing or
-press counters. No physical action has been assigned to a numbered button yet.
+## TFT
 
-### Build and hardware checks
+The screen shows Button1 to Button8 from left to right as eight 0/1 characters,
+four signed axis values in the same scale as the packet, and that packet's CRC.
+No floating-point TFT formatting is needed.
 
-Build firmware with `cmake --build --preset Debug` from Controller. Hardware
-calibration, ST-Link flashing, UART/radio throughput and end-to-end mainboard
-reception still need checking on the actual boards.
+## Build
 
-## Tutorial resources
+From the Controller folder:
 
-- [Docs, warning, and usage on the Controller PCB](https://github.com/UST-Robotics-Team/Software-Tutorial-2026-Notes/blob/main/additional-notes/RDC-controller.md)
-- [Tutorial 2 -- UART, Bluetooth](https://github.com/UST-Robotics-Team/Software-Tutorial-2026-Notes/tree/main/tutorial-2-uart-bluetooth)
-- [Advanced Tutorial 1 -- ADC](https://github.com/UST-Robotics-Team/Software-Tutorial-2026-Notes/blob/main/advanced-tutorial-1-Advanced-Embedded-Systems/notes/01-adc.md)
-- [Advanced Tutorial 1 -- Joystick example](https://github.com/UST-Robotics-Team/Software-Tutorial-2026-Notes/blob/main/advanced-tutorial-1-Advanced-Embedded-Systems/notes/02-joystick.md)
-- Google is your friend! Do your own research and implement the code yourself.
+```powershell
+cmake --preset Debug
+cmake --build --preset Debug
+```
+
+The firmware is `build/Debug/Controller.elf`. Physical TFT output, calibration
+and HC-05 transmission still need checking on the actual controller. MainBoard
+firmware has not been changed.
+
+## Original resources
+
+- [Controller PCB](https://github.com/UST-Robotics-Team/Software-Tutorial-2026-Notes/blob/main/additional-notes/RDC-controller.md)
+- [Tutorial 2: UART and Bluetooth](https://github.com/UST-Robotics-Team/Software-Tutorial-2026-Notes/tree/main/tutorial-2-uart-bluetooth)
+- [ADC](https://github.com/UST-Robotics-Team/Software-Tutorial-2026-Notes/blob/main/advanced-tutorial-1-Advanced-Embedded-Systems/notes/01-adc.md)
+- [Joystick example](https://github.com/UST-Robotics-Team/Software-Tutorial-2026-Notes/blob/main/advanced-tutorial-1-Advanced-Embedded-Systems/notes/02-joystick.md)

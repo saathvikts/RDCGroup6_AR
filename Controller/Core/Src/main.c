@@ -40,7 +40,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define INPUT_SAMPLE_PERIOD_MS 20U
+#define DISPLAY_PERIOD_MS 100U
 
 /* USER CODE END PD */
 
@@ -52,9 +52,9 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-static Buttons_State buttons;
+static uint8_t buttons;
 static Joystick_State joystick;
-static uint32_t last_joystick_read;
+static uint32_t last_display;
 
 /* USER CODE END PV */
 
@@ -68,17 +68,37 @@ void SystemClock_Config(void);
 /* USER CODE BEGIN 0 */
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 {
-  if (huart == &huart1) Controller_TransmitComplete();
+  if (huart == &huart1 && !Controller_Transmit()) Error_Handler();
 }
 
-void HAL_UART_AbortTransmitCpltCallback(UART_HandleTypeDef *huart)
+static void DisplayInputs(void)
 {
-  if (huart == &huart1) Controller_TransmitAbortComplete();
-}
+  uint32_t now = HAL_GetTick();
+  if ((uint32_t)(now - last_display) < DISPLAY_PERIOD_MS) return;
+  last_display = now;
 
-void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
-{
-  if (huart == &huart1) Controller_TransmitError();
+  uint8_t packet[CONTROLLER_PACKET_SIZE];
+  char button_text[BUTTON_COUNT + 1U];
+  const char *axis_names[4] = {"J1X", "J1Y", "J2X", "J2Y"};
+  Controller_GetPacket(packet);
+  for (unsigned i = 0; i < BUTTON_COUNT; ++i)
+  {
+    button_text[i] = (packet[0] & (1U << i)) ? '1' : '0';
+  }
+  button_text[BUTTON_COUNT] = '\0';
+
+  tft_prints(0, 0, "CONTROLLER TX");
+  tft_prints(0, 1, "B1-8:%s", button_text);
+  for (unsigned i = 0; i < JOYSTICK_AXIS_COUNT; ++i)
+  {
+    uint16_t wire = (uint16_t)packet[1U + 2U * i] |
+                    ((uint16_t)packet[2U + 2U * i] << 8);
+    int value = (wire & 0x8000U) ? (int)wire - 65536 : (int)wire;
+    tft_prints(0, (uint8_t)(2U + i), "%s:%+5d", axis_names[i], value);
+  }
+  tft_prints(0, 6, "SCALE:1000=1.0");
+  tft_prints(0, 7, "CRC:%02X", (unsigned)packet[9]);
+  tft_update(0);
 }
 
 /* USER CODE END 0 */
@@ -121,16 +141,14 @@ int main(void)
     Error_Handler();
   }
   tft_init(PIN_ON_TOP, BLACK, WHITE, CYAN, DARK_GREY);
-  Buttons_Init(HAL_GetTick());
-  Buttons_Read(HAL_GetTick(), &buttons);
+  buttons = Buttons_Read();
   Joystick_Read(&joystick);
-  last_joystick_read = HAL_GetTick();
-  Controller_LinkInit();
-  Controller_PublishInputs(buttons.down, &joystick);
-  if (!Controller_StartTransmit())
+  Controller_SetInputs(buttons, &joystick);
+  if (!Controller_Transmit())
   {
     Error_Handler();
   }
+  last_display = HAL_GetTick() - DISPLAY_PERIOD_MS;
 
   /* USER CODE END 2 */
 
@@ -141,24 +159,10 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    uint32_t now = HAL_GetTick();
-    uint8_t previous_buttons = buttons.down;
-    bool publish_inputs = false;
-    Buttons_Read(now, &buttons);
-    if ((uint32_t)(now - last_joystick_read) >= INPUT_SAMPLE_PERIOD_MS)
-    {
-      last_joystick_read = now;
-      Joystick_Read(&joystick);
-      publish_inputs = true;
-    }
-    if (publish_inputs || buttons.down != previous_buttons)
-    {
-      Controller_PublishInputs(buttons.down, &joystick);
-    }
-    if (Controller_TransmitFailed())
-    {
-      Error_Handler();
-    }
+    buttons = Buttons_Read();
+    Joystick_Read(&joystick);
+    Controller_SetInputs(buttons, &joystick);
+    DisplayInputs();
   }
   /* USER CODE END 3 */
 }
