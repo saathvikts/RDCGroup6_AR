@@ -18,6 +18,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "can.h"
 #include "dma.h"
 #include "spi.h"
 #include "tim.h"
@@ -28,8 +29,8 @@
 /* USER CODE BEGIN Includes */
 #include "lcd/lcd.h"
 #include "lcd/lcd_graphics.h"
-#include "robotics_logo.h"
 #include "elcp_motor/elcp_motor.h"
+#include "rm_motor.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -39,6 +40,10 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define RM_TARGET_RPM 300.0f
+#define RM_SPEED_KP 0.001f          // Initial, untuned gain: amperes per RPM.
+#define RM_TEST_CURRENT_LIMIT 1.5f
+#define RM_FEEDBACK_TIMEOUT_MS 100U
 
 /* USER CODE END PD */
 
@@ -61,6 +66,13 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+static float SpeedCurrent(float target_rpm, float measured_rpm)
+{
+  float current = RM_SPEED_KP * (target_rpm - measured_rpm);
+  if (current > RM_TEST_CURRENT_LIMIT) current = RM_TEST_CURRENT_LIMIT;
+  if (current < -RM_TEST_CURRENT_LIMIT) current = -RM_TEST_CURRENT_LIMIT;
+  return current;
+}
 
 /* USER CODE END 0 */
 
@@ -98,6 +110,7 @@ int main(void)
   MX_USART1_UART_Init();
   MX_TIM8_Init();
   MX_TIM12_Init();
+  MX_CAN1_Init();
   /* USER CODE BEGIN 2 */
   // Initialize and stop motors on startup
   ELCP_Motor_Init(MOTOR_J1);
@@ -106,13 +119,16 @@ int main(void)
   ELCP_Motor_Stop(MOTOR_J3);
 
   tft_init(PIN_ON_TOP, BLACK, WHITE, CYAN, DARK_GREY);
-
-  // Initial draw of title and Robotics logo on startup
-  tft_prints(4, 0, "RDC 2026");
-  tft_prints(4, 1, "Skeleton");
-  tft_update(0);
-
-  tft_print_image((void *)robotics_img, 0, 52, ROBOTICS_IMG_WIDTH, ROBOTICS_IMG_HEIGHT);
+  rm_can_init(&hcan1);
+  RM_Motor motor = RM_MOTOR_1;  // ESC ID 1; enum index 0.
+  rm_set_current_setpoint(&hcan1, motor, 0.0f);
+  uint32_t led_last_tick = HAL_GetTick();
+  uint32_t rm_last_tick = HAL_GetTick();
+  uint32_t display_last_tick = HAL_GetTick() - 50U;
+  float target_rpm = 0.0f;
+  float current_command = 0.0f;
+  int16_t measured_rpm = 0;
+  bool feedback_fresh = false;
 
   /* USER CODE END 2 */
 
@@ -123,15 +139,56 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    // Display header title
-    tft_prints(4, 0, "RDC 2026");
-    tft_prints(4, 1, "Skeleton");
-    tft_update(50);
+    uint32_t now = HAL_GetTick();
+    if ((uint32_t)(now - led_last_tick) >= 20U)
+    {
+      gpio_toggle(LED_D5);
+      led_last_tick = now;
+    }
+    if ((uint32_t)(now - rm_last_tick) >= 1U)
+    {
+      if (btn_read(BTN1))
+      {
+        target_rpm = RM_TARGET_RPM;
+      }
+      else if (btn_read(BTN2))
+      {
+        target_rpm = -RM_TARGET_RPM;
+      }
+      else
+      {
+        target_rpm = 0.0f;
+      }
 
-    // Display Robotics logo
-    tft_print_image((void *)robotics_img, 0, 52, ROBOTICS_IMG_WIDTH, ROBOTICS_IMG_HEIGHT);
+      feedback_fresh = rm_feedback_is_fresh(&hcan1, motor, RM_FEEDBACK_TIMEOUT_MS);
+      measured_rpm = rm_get_actual_vel(&hcan1, motor);
+      current_command = feedback_fresh ? SpeedCurrent(target_rpm, measured_rpm) : 0.0f;
+      rm_set_current_setpoint(&hcan1, motor, current_command);
+      rm_ctrl_loop(&hcan1);
+      rm_last_tick = now;
+    }
 
-    HAL_Delay(100);
+    if ((uint32_t)(now - display_last_tick) >= 50U)
+    {
+      int32_t milliamps = (int32_t)(rm_get_actual_current(&hcan1, motor) * 1000.0f);
+      unsigned magnitude = (unsigned)(milliamps < 0 ? -milliamps : milliamps);
+      int32_t command_ma = (int32_t)(current_command * 1000.0f);
+      unsigned command_magnitude = (unsigned)(command_ma < 0 ? -command_ma : command_ma);
+      tft_prints(0, 0, "RM1 SPEED P");
+      tft_prints(0, 1, "tgt:%d RPM", (int)target_rpm);
+      tft_prints(0, 2, "vel:%d RPM", (int)measured_rpm);
+      tft_prints(0, 3, "err:%d RPM", (int)target_rpm - (int)measured_rpm);
+      tft_prints(0, 4, "cmd:%c%u.%03uA", command_ma < 0 ? '-' : '+',
+                 command_magnitude / 1000U, command_magnitude % 1000U);
+      tft_prints(0, 5, "cur:%c%u.%03uA", milliamps < 0 ? '-' : '+',
+                 magnitude / 1000U, magnitude % 1000U);
+      tft_prints(0, 6, "enc:%u", (unsigned)rm_get_encoder(&hcan1, motor));
+      tft_prints(0, 7, "BTN1:+300 RPM");
+      tft_prints(0, 8, "BTN2:-300 RPM");
+      tft_prints(0, 9, "CAN:%s", feedback_fresh ? "OK" : "NO FEEDBACK");
+      tft_update(0);
+      display_last_tick = HAL_GetTick();
+    }
   }
   /* USER CODE END 3 */
 }

@@ -72,12 +72,18 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : BOOT1_Pin Button4_Pin Button3_Pin Button7_Pin
-                           Button6_Pin Button5_Pin */
-  GPIO_InitStruct.Pin = BOOT1_Pin|Button4_Pin|Button3_Pin|Button7_Pin
-                          |Button6_Pin|Button5_Pin;
+  /*Configure GPIO pin : BOOT1_Pin */
+  GPIO_InitStruct.Pin = BOOT1_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(BOOT1_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : Button4_Pin Button3_Pin Button7_Pin Button6_Pin
+                           Button5_Pin */
+  GPIO_InitStruct.Pin = Button4_Pin|Button3_Pin|Button7_Pin|Button6_Pin
+                          |Button5_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /*Configure GPIO pins : TFT_RES_Pin TFT_DC_Pin TFT_CS_Pin TFT_BL_Pin
@@ -89,10 +95,14 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : Button2_Pin Button1_Pin LimitSwitch2_Pin LimitSwitch1_Pin
-                           Button8_Pin */
-  GPIO_InitStruct.Pin = Button2_Pin|Button1_Pin|LimitSwitch2_Pin|LimitSwitch1_Pin
-                          |Button8_Pin;
+  /*Configure GPIO pins : Button2_Pin Button1_Pin Button8_Pin */
+  GPIO_InitStruct.Pin = Button2_Pin|Button1_Pin|Button8_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : LimitSwitch2_Pin LimitSwitch1_Pin */
+  GPIO_InitStruct.Pin = LimitSwitch2_Pin|LimitSwitch1_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);

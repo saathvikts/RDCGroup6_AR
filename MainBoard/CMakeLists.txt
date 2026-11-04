@@ -46,6 +46,7 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/lcd.c
     Core/Src/lcd_graphics.c
+    Core/Src/rm_motor.c
     Core/Src/robotics_logo.c
     Core/Src/ir_sensor.c
     Core/Src/ultrasonic.c

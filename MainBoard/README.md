@@ -1,5 +1,25 @@
 # Mainboard Resources
 
+## Motor 1 proportional speed test
+
+MainBoard now uses BTN1 for +300 rotor RPM, BTN2 for -300 rotor RPM, and neither
+for 0 RPM. `RM_MOTOR_1` means ESC ID 1. The motor library reports rotor RPM before
+the gearbox, so the target uses those same units.
+
+The P-only calculation is `current = RM_SPEED_KP * (target_rpm - measured_rpm)`.
+Its initial, untuned gain is 0.001 A/RPM and its output is limited to +/-1.5 A.
+The library's existing 5 A soft limit is unchanged. There is no integral or
+derivative term. A zero-speed target can apply braking current while moving.
+
+Current is requested only after valid feedback from this motor has arrived
+within 100 ms; otherwise the requested current is zero. The TFT shows target,
+measured speed, error, commanded/measured current, encoder and feedback status.
+Control uses the existing 1 ms main-loop time check; TFT drawing can introduce
+timing jitter. The gain and feedback direction still need checking on a secured
+motor before use on the chassis. The program has not been flashed by this task.
+
+## Original resources
+
 > [!CAUTION]
 > If ELCP motors are connected, disconnect motor power or keep the wheels
 > off the ground while flashing — GPIO lines float briefly during reset.
