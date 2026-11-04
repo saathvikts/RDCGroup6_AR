@@ -83,7 +83,7 @@ static void DisplayInputs(void)
   Controller_GetPacket(packet);
   for (unsigned i = 0; i < BUTTON_COUNT; ++i)
   {
-    button_text[i] = (packet[0] & (1U << i)) ? '1' : '0';
+    button_text[i] = (packet[CONTROLLER_BUTTONS_OFFSET] & (1U << i)) ? '1' : '0';
   }
   button_text[BUTTON_COUNT] = '\0';
 
@@ -91,13 +91,13 @@ static void DisplayInputs(void)
   tft_prints(0, 1, "B1-8:%s", button_text);
   for (unsigned i = 0; i < JOYSTICK_AXIS_COUNT; ++i)
   {
-    uint16_t wire = (uint16_t)packet[1U + 2U * i] |
-                    ((uint16_t)packet[2U + 2U * i] << 8);
+    uint16_t wire = (uint16_t)packet[CONTROLLER_AXES_OFFSET + 2U * i] |
+                    ((uint16_t)packet[CONTROLLER_AXES_OFFSET + 1U + 2U * i] << 8);
     int value = (wire & 0x8000U) ? (int)wire - 65536 : (int)wire;
     tft_prints(0, (uint8_t)(2U + i), "%s:%+5d", axis_names[i], value);
   }
   tft_prints(0, 6, "SCALE:1000=1.0");
-  tft_prints(0, 7, "CRC:%02X", (unsigned)packet[9]);
+  tft_prints(0, 7, "CRC:%02X", (unsigned)packet[CONTROLLER_CRC_OFFSET]);
   tft_update(0);
 }
 

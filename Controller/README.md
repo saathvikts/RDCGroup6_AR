@@ -16,7 +16,7 @@ the previous one finishes. The loop does not start transmissions. There is no
 abort/restart handling, stale-input timer, button event/hold tracking, debounce,
 sequence number, version field or status field.
 
-The transmitter keeps two ten-byte arrays: the latest input packet and the
+The transmitter keeps two packet arrays: the latest input packet and the
 packet HAL is sending. Only the completed-transfer callback changes the send
 array. A short protected copy prevents an interrupt from seeing half an update.
 The TFT copies the send array so its displayed values and CRC belong together.
@@ -41,21 +41,27 @@ board convention treats a LOW input as pressed. Joystick push switches and the
 LimitSwitch-labelled inputs are not included. USART1 uses PB6 TX / PB7 RX,
 115200 baud, 8N1; confirm the HC-05 settings and physical connections.
 
-## Packet: 10 bytes
+## Packet: 12 bytes
 
 | Offset | Value |
 | --- | --- |
-| 0 | Eight buttons: bit 0 = Button1, ..., bit 7 = Button8; 1 = pressed |
-| 1-2 | J1X |
-| 3-4 | J1Y |
-| 5-6 | J2X |
-| 7-8 | J2Y |
-| 9 | CRC-8 over bytes 0 through 8 |
+| 0 | Start marker 0xAA |
+| 1 | Start marker 0x55 |
+| 2 | Eight buttons: bit 0 = Button1, ..., bit 7 = Button8; 1 = pressed |
+| 3-4 | J1X |
+| 5-6 | J1Y |
+| 7-8 | J2X |
+| 9-10 | J2Y |
+| 11 | CRC-8 over bytes 0 through 10 |
 
 Each axis is a signed 16-bit integer, low byte first, rounded to [-1000, +1000].
-For example, -1000 represents -1.0 and 500 represents +0.5. There are no start
-markers or additional fields. The mainboard receiver must use this ten-byte
-layout, replacing the earlier fifteen-byte format.
+For example, -1000 represents -1.0 and 500 represents +0.5.
+
+Packets are sent back to back with no gap, so the receiver finds the start by
+searching for 0xAA followed by 0x55, then checks the CRC. Without the marker, an
+idle packet (no buttons, centred sticks) was ten zero bytes with CRC 0x00, which
+passed the check at every alignment. Data bytes may also contain 0xAA 0x55, so
+a CRC failure means the receiver should resume the search one byte later.
 
 CRC-8 settings: polynomial 0x07, initial value 0x00, no reflection, final XOR
 0x00. The ASCII bytes `123456789` produce 0xF4.

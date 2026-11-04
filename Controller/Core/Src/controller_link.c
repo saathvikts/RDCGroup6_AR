@@ -25,17 +25,19 @@ uint8_t Controller_Crc8(const uint8_t *data, size_t length)
 void Controller_SetInputs(uint8_t buttons, const Joystick_State *joystick)
 {
     uint8_t packet[CONTROLLER_PACKET_SIZE];
-    packet[0] = buttons;
+    packet[0] = CONTROLLER_HEADER_0;
+    packet[1] = CONTROLLER_HEADER_1;
+    packet[CONTROLLER_BUTTONS_OFFSET] = buttons;
     for (unsigned i = 0; i < JOYSTICK_AXIS_COUNT; ++i) {
         float axis = joystick->valid ? joystick->normalized[i] : 0.0f;
         int16_t value = (int16_t)(axis * 1000.0f + (axis < 0.0f ? -0.5f : 0.5f));
         uint16_t wire = (uint16_t)value;
-        packet[1U + 2U * i] = (uint8_t)wire;
-        packet[2U + 2U * i] = (uint8_t)(wire >> 8);
+        packet[CONTROLLER_AXES_OFFSET + 2U * i] = (uint8_t)wire;
+        packet[CONTROLLER_AXES_OFFSET + 1U + 2U * i] = (uint8_t)(wire >> 8);
     }
-    packet[9] = Controller_Crc8(packet, 9U);
+    packet[CONTROLLER_CRC_OFFSET] = Controller_Crc8(packet, CONTROLLER_CRC_OFFSET);
 
-    /* Only this ten-byte copy needs protection from the TX callback. */
+    /* Only this short copy needs protection from the TX callback. */
     uint32_t interrupt_mask = __get_PRIMASK();
     __disable_irq();
     memcpy(latest_packet, packet, sizeof(packet));

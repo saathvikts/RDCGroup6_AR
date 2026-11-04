@@ -96,6 +96,58 @@ const uint8_t tft_orientation_init_code[] = {
 };
 #endif
 
+#ifdef MODEL_ST7789
+// ST7789V2, 2.0-inch, 240x320, RGB666 configuration.
+// clang-format off
+const uint8_t tft_init_code[] = { 0x00,
+    // Sleep out
+    0x11, TFT_DELAY_MARKER, 120,                         TFT_EOL_MARKER,
+
+    // Full 240x320 address range
+    0x2A, 0x00, 0x00, 0x00, 0xEF,                       TFT_EOL_MARKER,
+    0x2B, 0x00, 0x00, 0x01, 0x3F,                       TFT_EOL_MARKER,
+
+    // Porch and gate control
+    0xB2, 0x0C, 0x0C, 0x00, 0x33, 0x33,                 TFT_EOL_MARKER,
+    0xB7, 0x56,                                          TFT_EOL_MARKER,
+
+    // Power and frame-rate configuration from STM32_example_screen
+    0xBB, 0x18,                                          TFT_EOL_MARKER,
+    0xC0, 0x2C,                                          TFT_EOL_MARKER,
+    0xC2, 0x01,                                          TFT_EOL_MARKER,
+    0xC3, 0x1F,                                          TFT_EOL_MARKER,
+    0xC4, 0x20,                                          TFT_EOL_MARKER,
+    0xC6, 0x0F,                                          TFT_EOL_MARKER,
+    0xD0, 0xA6, 0xA1,                                    TFT_EOL_MARKER,
+
+    // Positive and negative gamma
+    0xE0, 0xD0, 0x0D, 0x14, 0x0B, 0x0B, 0x07, 0x3A,
+          0x44, 0x50, 0x08, 0x13, 0x13, 0x2D, 0x32,      TFT_EOL_MARKER,
+    0xE1, 0xD0, 0x0D, 0x14, 0x0B, 0x0B, 0x07, 0x3A,
+          0x44, 0x50, 0x08, 0x13, 0x13, 0x2D, 0x32,      TFT_EOL_MARKER,
+
+    // Orientation, RGB666 pixel format, and two-data-lane mode disabled
+    TFT_ORIENTATION_CMD,                                 TFT_EOL_MARKER,
+    0x3A, 0x66,                                          TFT_EOL_MARKER,
+    0xE7, 0x00,                                          TFT_EOL_MARKER,
+
+    // Match the example panel's inversion setting, then enable display
+    0x21,                                                TFT_EOL_MARKER,
+    0x29,                                                TFT_EOL_MARKER,
+    0x2C,                                                TFT_EOL_MARKER,
+
+    TFT_EOF_MARKER
+};
+// clang-format on
+
+const uint8_t tft_orientation_init_code[] = {
+    0xC0,
+    0xA0,
+    0x00,
+    0x60,
+};
+#endif
+
 #if defined(MODEL_ST7735) || defined(MODEL_ST7735S)
 // clang-format off
 const uint8_t tft_init_code[] = { 0x00,
