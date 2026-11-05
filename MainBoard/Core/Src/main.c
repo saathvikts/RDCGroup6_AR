@@ -31,6 +31,7 @@
 #include "lcd/lcd_graphics.h"
 #include "elcp_motor/elcp_motor.h"
 #include "rm_motor.h"
+#include "controller_receiver.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -112,6 +113,11 @@ int main(void)
   MX_TIM12_Init();
   MX_CAN1_Init();
   /* USER CODE BEGIN 2 */
+  if (ControllerReceiver_Start(&huart1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
   // Initialize and stop motors on startup
   ELCP_Motor_Init(MOTOR_J1);
   ELCP_Motor_Init(MOTOR_J3);
@@ -139,6 +145,9 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    ControllerReceiver_Process();
+
+    HAL_GPIO_TogglePin(LED_D6_GPIO_Port, LED_D6_Pin);
     uint32_t now = HAL_GetTick();
     if ((uint32_t)(now - led_last_tick) >= 20U)
     {
@@ -168,27 +177,27 @@ int main(void)
       rm_last_tick = now;
     }
 
-    if ((uint32_t)(now - display_last_tick) >= 50U)
-    {
-      int32_t milliamps = (int32_t)(rm_get_actual_current(&hcan1, motor) * 1000.0f);
-      unsigned magnitude = (unsigned)(milliamps < 0 ? -milliamps : milliamps);
-      int32_t command_ma = (int32_t)(current_command * 1000.0f);
-      unsigned command_magnitude = (unsigned)(command_ma < 0 ? -command_ma : command_ma);
-      tft_prints(0, 0, "RM1 SPEED P");
-      tft_prints(0, 1, "tgt:%d RPM", (int)target_rpm);
-      tft_prints(0, 2, "vel:%d RPM", (int)measured_rpm);
-      tft_prints(0, 3, "err:%d RPM", (int)target_rpm - (int)measured_rpm);
-      tft_prints(0, 4, "cmd:%c%u.%03uA", command_ma < 0 ? '-' : '+',
-                 command_magnitude / 1000U, command_magnitude % 1000U);
-      tft_prints(0, 5, "cur:%c%u.%03uA", milliamps < 0 ? '-' : '+',
-                 magnitude / 1000U, magnitude % 1000U);
-      tft_prints(0, 6, "enc:%u", (unsigned)rm_get_encoder(&hcan1, motor));
-      tft_prints(0, 7, "BTN1:+300 RPM");
-      tft_prints(0, 8, "BTN2:-300 RPM");
-      tft_prints(0, 9, "CAN:%s", feedback_fresh ? "OK" : "NO FEEDBACK");
-      tft_update(0);
-      display_last_tick = HAL_GetTick();
-    }
+    // if ((uint32_t)(now - display_last_tick) >= 50U)
+    // {
+    //   int32_t milliamps = (int32_t)(rm_get_actual_current(&hcan1, motor) * 1000.0f);
+    //   unsigned magnitude = (unsigned)(milliamps < 0 ? -milliamps : milliamps);
+    //   int32_t command_ma = (int32_t)(current_command * 1000.0f);
+    //   unsigned command_magnitude = (unsigned)(command_ma < 0 ? -command_ma : command_ma);
+    //   tft_prints(0, 0, "RM1 SPEED P");
+    //   tft_prints(0, 1, "tgt:%d RPM", (int)target_rpm);
+    //   tft_prints(0, 2, "vel:%d RPM", (int)measured_rpm);
+    //   tft_prints(0, 3, "err:%d RPM", (int)target_rpm - (int)measured_rpm);
+    //   tft_prints(0, 4, "cmd:%c%u.%03uA", command_ma < 0 ? '-' : '+',
+    //              command_magnitude / 1000U, command_magnitude % 1000U);
+    //   tft_prints(0, 5, "cur:%c%u.%03uA", milliamps < 0 ? '-' : '+',
+    //              magnitude / 1000U, magnitude % 1000U);
+    //   tft_prints(0, 6, "enc:%u", (unsigned)rm_get_encoder(&hcan1, motor));
+    //   tft_prints(0, 7, "BTN1:+300 RPM");
+    //   tft_prints(0, 8, "BTN2:-300 RPM");
+    //   tft_prints(0, 9, "CAN:%s", feedback_fresh ? "OK" : "NO FEEDBACK");
+    //   tft_update(0);
+    //   display_last_tick = HAL_GetTick();
+    // }
   }
   /* USER CODE END 3 */
 }

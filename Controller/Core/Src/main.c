@@ -87,7 +87,7 @@ static void DisplayInputs(void)
   }
   button_text[BUTTON_COUNT] = '\0';
 
-  tft_prints(0, 0, "CONTROLLER TX");
+  tft_prints(0, 0, "CTRL TX 12B AA55");
   tft_prints(0, 1, "B1-8:%s", button_text);
   for (unsigned i = 0; i < JOYSTICK_AXIS_COUNT; ++i)
   {
