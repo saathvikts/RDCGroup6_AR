@@ -12,6 +12,9 @@
 #define CONTROLLER_RECEIVER_AXES_OFFSET 3U
 #define CONTROLLER_RECEIVER_CRC_OFFSET 11U
 
+/* The link counts as lost when no CRC-valid packet arrived for this long. */
+#define CONTROLLER_RECEIVER_TIMEOUT_MS 100U
+
 /*
  * Start interrupt-driven reception on the supplied UART.
  * The UART must have been initialized before this function is called.
@@ -31,12 +34,18 @@ void ControllerReceiver_RxComplete(UART_HandleTypeDef *huart);
 void ControllerReceiver_IrqHook(void);
 
 /*
- * Run newly received button commands from the main loop.
- * A command is run once when its button changes from released to pressed.
+ * Draw the controller link status, buttons and joysticks on TFT rows 0-4.
+ * Call from the main loop's display task; it does not call tft_update().
  */
-void ControllerReceiver_Process(void);
+void ControllerReceiver_Draw(void);
 
 bool ControllerReceiver_IsPacketValid(void);
+
+/*
+ * True only if a CRC-valid packet arrived within the last timeout_ms.
+ * Use this, not IsPacketValid(), before acting on joystick or button values.
+ */
+bool ControllerReceiver_IsFresh(uint32_t timeout_ms);
 uint8_t ControllerReceiver_GetButtons(void);
 int16_t ControllerReceiver_GetAxis(unsigned axis);
 

@@ -18,15 +18,15 @@ static volatile uint8_t receiver_buttons;
 static volatile int16_t receiver_axes[4];
 static volatile uint8_t receiver_buttons_pending;
 static uint8_t receiver_previous_buttons;
-static uint32_t receiver_last_display;
 static volatile bool receiver_packet_valid;
+/* HAL_GetTick() of the last packet that passed the CRC check. */
+static volatile uint32_t receiver_last_packet_tick;
 static volatile uint16_t receiver_byte_count;
 static volatile uint16_t receiver_packet_count;
 static volatile uint16_t receiver_crc_error_count;
 static volatile uint16_t receiver_overrun_count;
 static volatile uint16_t receiver_frame_error_count;
 static volatile uint16_t receiver_noise_error_count;
-static volatile uint16_t receiver_header_count;
 static ControllerReceiver_State receiver_state = RECEIVER_WAIT_HEADER_0;
 
 static uint8_t ControllerReceiver_Crc8(const uint8_t *data, uint32_t length)
@@ -67,6 +67,8 @@ static void ControllerReceiver_HandlePacket(void)
   receiver_buttons = receiver_packet[CONTROLLER_RECEIVER_BUTTONS_OFFSET];
   receiver_buttons_pending = 1U;
   receiver_packet_valid = true;
+  /* Only a packet that passed the CRC counts as "connected". */
+  receiver_last_packet_tick = HAL_GetTick();
   receiver_packet_count++;
   receiver_state = RECEIVER_WAIT_HEADER_0;
 }
@@ -89,7 +91,7 @@ HAL_StatusTypeDef ControllerReceiver_Start(UART_HandleTypeDef *huart)
   receiver_buttons_pending = 1U;
   receiver_previous_buttons = 0U;
   receiver_packet_valid = false;
-  receiver_last_display = HAL_GetTick() - 100U;
+  receiver_last_packet_tick = 0U;
   receiver_byte_count = 0U;
   receiver_packet_count = 0U;
   receiver_crc_error_count = 0U;
@@ -108,10 +110,6 @@ void ControllerReceiver_RxComplete(UART_HandleTypeDef *huart)
   }
 
   receiver_byte_count++;
-  if (receiver_byte == CONTROLLER_RECEIVER_HEADER_0)
-  {
-    receiver_header_count++;
-  }
 
   switch (receiver_state)
   {
@@ -206,37 +204,24 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
   }
 }
 
-void ControllerReceiver_Process(void)
+void ControllerReceiver_Draw(void)
 {
   uint8_t buttons;
   int16_t axes[4];
   uint32_t interrupt_mask;
   char button_text[9];
-  uint8_t last_byte;
-  uint16_t byte_count, packet_count, crc_error_count;
-  uint16_t overrun_count, frame_error_count, noise_error_count;
-  uint16_t header_count;
-  bool packet_valid;
-  uint32_t now = HAL_GetTick();
+  uint16_t packet_count, crc_error_count, uart_error_count;
+  bool link_fresh = ControllerReceiver_IsFresh(CONTROLLER_RECEIVER_TIMEOUT_MS);
 
-  if ((uint32_t)(now - receiver_last_display) < 100U)
-  {
-    return;
-  }
-
-  receiver_last_display = now;
+  /* Copy the ISR-updated values in one go so they belong together. */
   interrupt_mask = __get_PRIMASK();
   __disable_irq();
   buttons = receiver_buttons;
-  last_byte = receiver_byte;
-  byte_count = receiver_byte_count;
   packet_count = receiver_packet_count;
   crc_error_count = receiver_crc_error_count;
-  overrun_count = receiver_overrun_count;
-  frame_error_count = receiver_frame_error_count;
-  noise_error_count = receiver_noise_error_count;
-  header_count = receiver_header_count;
-  packet_valid = receiver_packet_valid;
+  uart_error_count = (uint16_t)(receiver_overrun_count +
+                                receiver_frame_error_count +
+                                receiver_noise_error_count);
   for (unsigned axis = 0U; axis < 4U; ++axis)
   {
     axes[axis] = receiver_axes[axis];
@@ -249,27 +234,34 @@ void ControllerReceiver_Process(void)
     button_text[i] = (buttons & (1U << i)) != 0U ? '1' : '0';
   }
   button_text[8] = '\0';
-  /* 10 rows x 16 columns fit the 128x160 TFT. */
-  tft_prints(0, 0, "PKT:%-4s R:%5u", packet_valid ? "OK" : "WAIT",
+
+  /* Rows 0-4 of the 10x16 TFT. The caller owns rows 5-9 and tft_update(). */
+  tft_prints(0, 0, "PKT:%-4s R:%5u", link_fresh ? "OK" : "LOST",
              (unsigned)packet_count);
   tft_prints(0, 1, "B:%s", button_text);
-  tft_prints(0, 2, "C:%5u AA:%5u", (unsigned)crc_error_count,
-             (unsigned)header_count);
-  tft_prints(0, 3, "F:%5u N:%5u", (unsigned)frame_error_count,
-             (unsigned)noise_error_count);
-  tft_prints(0, 4, "O:%5u BY:%5u", (unsigned)overrun_count,
-             (unsigned)byte_count);
-  tft_prints(0, 5, "J1X:%6d", (int)axes[0]);
-  tft_prints(0, 6, "J1Y:%6d", (int)axes[1]);
-  tft_prints(0, 7, "J2X:%6d", (int)axes[2]);
-  tft_prints(0, 8, "J2Y:%6d", (int)axes[3]);
-  tft_prints(0, 9, "BYTE:0x%02X", (unsigned)last_byte);
-  tft_update(0);
+  tft_prints(0, 2, "C:%5u E:%5u", (unsigned)crc_error_count,
+             (unsigned)uart_error_count);
+  /* tft_prints() has its own printf: no '+' flag, so use plain %5d. */
+  tft_prints(0, 3, "J1 %5d %5d", (int)axes[0], (int)axes[1]);
+  tft_prints(0, 4, "J2 %5d %5d", (int)axes[2], (int)axes[3]);
 }
 
 bool ControllerReceiver_IsPacketValid(void)
 {
   return receiver_packet_valid;
+}
+
+bool ControllerReceiver_IsFresh(uint32_t timeout_ms)
+{
+  /* Read both ISR-updated values together so they belong to the same packet. */
+  uint32_t interrupt_mask = __get_PRIMASK();
+  __disable_irq();
+  bool valid = receiver_packet_valid;
+  uint32_t last_tick = receiver_last_packet_tick;
+  __set_PRIMASK(interrupt_mask);
+
+  /* Unsigned subtraction gives the packet's age, even across tick wrap. */
+  return valid && (uint32_t)(HAL_GetTick() - last_tick) < timeout_ms;
 }
 
 uint8_t ControllerReceiver_GetButtons(void)

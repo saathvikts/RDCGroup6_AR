@@ -42,9 +42,19 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define RM_TARGET_RPM 300.0f
-#define RM_SPEED_KP 0.001f          // Initial, untuned gain: amperes per RPM.
+/* Speed PI starting values (rotor RPM in, amperes out). Not final tuning:
+   Kp 0.010 alone oscillated at 100 RPM, so Kp is lowered and the I term
+   removes the remaining error. Integral time Kp/Ki = 60 ms. */
+#define RM_SPEED_KP 0.006f          // Amperes per RPM.
+#define RM_SPEED_KI 0.10f           // Amperes per (RPM * s).
 #define RM_TEST_CURRENT_LIMIT 1.5f
+#define RM_MAX_DT_S 0.01f           // Longest time step the integral may use (guards long loop stalls).
 #define RM_FEEDBACK_TIMEOUT_MS 100U
+
+/* Joystick -> motor 1 target speed. */
+#define DRIVE_AXIS       1U       /* J1Y; axis order is J1X, J1Y, J2X, J2Y */
+#define STICK_DEADZONE   50       /* out of +-1000; extra margin on top of the controller's deadband */
+#define MAX_TARGET_RPM   2000.0f  /* rotor RPM (~104 RPM at the M3508 output, ~1.7 turns/s) */
 
 /* USER CODE END PD */
 
@@ -67,12 +77,73 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-static float SpeedCurrent(float target_rpm, float measured_rpm)
+/* Convert a joystick axis (-1000..+1000) into a target rotor RPM.
+   The result can never exceed +-MAX_TARGET_RPM. */
+static float StickToTargetRpm(int16_t stick)
 {
-  float current = RM_SPEED_KP * (target_rpm - measured_rpm);
-  if (current > RM_TEST_CURRENT_LIMIT) current = RM_TEST_CURRENT_LIMIT;
-  if (current < -RM_TEST_CURRENT_LIMIT) current = -RM_TEST_CURRENT_LIMIT;
-  return current;
+  if (stick > -STICK_DEADZONE && stick < STICK_DEADZONE)
+  {
+    return 0.0f;                         /* stick near centre: stand still */
+  }
+  if (stick > 1000) stick = 1000;        /* guard against out-of-range values */
+  if (stick < -1000) stick = -1000;
+  return (float)stick / 1000.0f * MAX_TARGET_RPM;
+}
+
+/* Speed PI controller: target/actual in rotor RPM, output in amperes. */
+typedef struct
+{
+  float kp;        /* A per RPM */
+  float ki;        /* A per (RPM * s) */
+  float limit;     /* output clamp, +-A */
+  float integral;  /* accumulated error, RPM * s */
+} SpeedPI;
+
+static SpeedPI speed_pi = {
+  .kp = RM_SPEED_KP,
+  .ki = RM_SPEED_KI,
+  .limit = RM_TEST_CURRENT_LIMIT,
+  .integral = 0.0f,
+};
+
+/* Forget the accumulated error, e.g. after a stop or a lost signal. */
+static void SpeedPI_Reset(SpeedPI *pi)
+{
+  pi->integral = 0.0f;
+}
+
+static float SpeedPI_Update(SpeedPI *pi, float target_rpm, float actual_rpm, float dt_s)
+{
+  float error = target_rpm - actual_rpm;
+
+  /* What the integral would become if we integrate this step. */
+  float candidate = pi->integral + error * dt_s;
+
+  /* Extra safety net: the I part alone may never exceed the output limit. */
+  if (pi->ki > 0.0f)
+  {
+    float max_integral = pi->limit / pi->ki;
+    if (candidate > max_integral) candidate = max_integral;
+    if (candidate < -max_integral) candidate = -max_integral;
+  }
+
+  float output = pi->kp * error + pi->ki * candidate;
+
+  /* Anti-windup: while the output is clamped, do NOT keep integrating. */
+  if (output > pi->limit)
+  {
+    output = pi->limit;
+  }
+  else if (output < -pi->limit)
+  {
+    output = -pi->limit;
+  }
+  else
+  {
+    pi->integral = candidate;
+  }
+
+  return output;
 }
 
 /* USER CODE END 0 */
@@ -130,11 +201,12 @@ int main(void)
   rm_set_current_setpoint(&hcan1, motor, 0.0f);
   uint32_t led_last_tick = HAL_GetTick();
   uint32_t rm_last_tick = HAL_GetTick();
-  uint32_t display_last_tick = HAL_GetTick() - 50U;
-  float target_rpm = 0.0f;
-  float current_command = 0.0f;
+  uint32_t display_last_tick = HAL_GetTick() - 100U;
   int16_t measured_rpm = 0;
+  uint16_t encoder = 0U;
   bool feedback_fresh = false;
+  bool link_fresh = false;
+  float target_rpm = 0.0f;
 
   /* USER CODE END 2 */
 
@@ -145,8 +217,6 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    ControllerReceiver_Process();
-
     HAL_GPIO_TogglePin(LED_D6_GPIO_Port, LED_D6_Pin);
     uint32_t now = HAL_GetTick();
     if ((uint32_t)(now - led_last_tick) >= 20U)
@@ -154,50 +224,67 @@ int main(void)
       gpio_toggle(LED_D5);
       led_last_tick = now;
     }
+
+    /* Motor task, every 1 ms: joystick -> target RPM -> PI -> current. */
     if ((uint32_t)(now - rm_last_tick) >= 1U)
     {
-      if (btn_read(BTN1))
+      /* Real time since the last pass; the loop is not always exactly 1 ms. */
+      float dt_s = (float)(now - rm_last_tick) / 1000.0f;
+      if (dt_s > RM_MAX_DT_S) dt_s = RM_MAX_DT_S;
+
+      link_fresh = ControllerReceiver_IsFresh(CONTROLLER_RECEIVER_TIMEOUT_MS);
+      feedback_fresh = rm_feedback_is_fresh(&hcan1, motor, RM_FEEDBACK_TIMEOUT_MS);
+      measured_rpm = rm_get_actual_vel(&hcan1, motor);
+      encoder = rm_get_encoder(&hcan1, motor);
+
+      /* Lost controller link -> target 0, whatever the last stick value was. */
+      target_rpm = link_fresh
+                     ? StickToTargetRpm(ControllerReceiver_GetAxis(DRIVE_AXIS))
+                     : 0.0f;
+
+      float current_command;
+      if (!link_fresh || !feedback_fresh)
       {
-        target_rpm = RM_TARGET_RPM;
-      }
-      else if (btn_read(BTN2))
-      {
-        target_rpm = -RM_TARGET_RPM;
+        /* Lost controller or motor feedback: no current, forget old error. */
+        SpeedPI_Reset(&speed_pi);
+        current_command = 0.0f;
       }
       else
       {
-        target_rpm = 0.0f;
+        if (target_rpm == 0.0f)
+        {
+          /* Stick released: don't carry old accumulated error into the next move. */
+          SpeedPI_Reset(&speed_pi);
+        }
+        current_command = SpeedPI_Update(&speed_pi, target_rpm,
+                                         (float)measured_rpm, dt_s);
       }
 
-      feedback_fresh = rm_feedback_is_fresh(&hcan1, motor, RM_FEEDBACK_TIMEOUT_MS);
-      measured_rpm = rm_get_actual_vel(&hcan1, motor);
-      current_command = feedback_fresh ? SpeedCurrent(target_rpm, measured_rpm) : 0.0f;
+      /* Only motor 1 is ever set; motors 2-8 stay at 0 A. */
       rm_set_current_setpoint(&hcan1, motor, current_command);
       rm_ctrl_loop(&hcan1);
       rm_last_tick = now;
     }
 
-    // if ((uint32_t)(now - display_last_tick) >= 50U)
-    // {
-    //   int32_t milliamps = (int32_t)(rm_get_actual_current(&hcan1, motor) * 1000.0f);
-    //   unsigned magnitude = (unsigned)(milliamps < 0 ? -milliamps : milliamps);
-    //   int32_t command_ma = (int32_t)(current_command * 1000.0f);
-    //   unsigned command_magnitude = (unsigned)(command_ma < 0 ? -command_ma : command_ma);
-    //   tft_prints(0, 0, "RM1 SPEED P");
-    //   tft_prints(0, 1, "tgt:%d RPM", (int)target_rpm);
-    //   tft_prints(0, 2, "vel:%d RPM", (int)measured_rpm);
-    //   tft_prints(0, 3, "err:%d RPM", (int)target_rpm - (int)measured_rpm);
-    //   tft_prints(0, 4, "cmd:%c%u.%03uA", command_ma < 0 ? '-' : '+',
-    //              command_magnitude / 1000U, command_magnitude % 1000U);
-    //   tft_prints(0, 5, "cur:%c%u.%03uA", milliamps < 0 ? '-' : '+',
-    //              magnitude / 1000U, magnitude % 1000U);
-    //   tft_prints(0, 6, "enc:%u", (unsigned)rm_get_encoder(&hcan1, motor));
-    //   tft_prints(0, 7, "BTN1:+300 RPM");
-    //   tft_prints(0, 8, "BTN2:-300 RPM");
-    //   tft_prints(0, 9, "CAN:%s", feedback_fresh ? "OK" : "NO FEEDBACK");
-    //   tft_update(0);
-    //   display_last_tick = HAL_GetTick();
-    // }
+    /* Display task, every 100 ms. This is the only place that calls
+       tft_update(), so the controller and motor rows never fight. */
+    if ((uint32_t)(now - display_last_tick) >= 100U)
+    {
+      ControllerReceiver_Draw();                       /* rows 0-4 */
+      tft_prints(0, 5, "M1 CAN:%-5s", feedback_fresh ? "OK" : "STALE");
+      tft_prints(0, 6, "RPM:%6d", (int)measured_rpm);  /* rotor RPM */
+      tft_prints(0, 7, "ENC:%5u", (unsigned)encoder);  /* 0-8191 per rotor turn */
+      /* Target and error (target - actual), both in rotor RPM. */
+      tft_prints(0, 8, "T:%5d E:%5d", (int)target_rpm,
+                 (int)target_rpm - (int)measured_rpm);
+      /* Current in mA: commanded (read back from the driver) / measured by
+         the C620. Measured ~= commanded means the ESC is obeying. */
+      tft_prints(0, 9, "I:%5d/%5d mA",
+                 (int)(rm_get_current_setpoint(&hcan1, motor) * 1000.0f),
+                 (int)(rm_get_actual_current(&hcan1, motor) * 1000.0f));
+      tft_update(0);
+      display_last_tick = now;
+    }
   }
   /* USER CODE END 3 */
 }
