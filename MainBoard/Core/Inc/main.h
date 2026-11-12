@@ -71,6 +71,7 @@ void Error_Handler(void);
 #define US_ECHO_GPIO_Port GPIOA
 #define IR_D0_UART2_T_Pin GPIO_PIN_2
 #define IR_D0_UART2_T_GPIO_Port GPIOA
+#define IR_A0_UART2_R_ADC_CHANNEL ADC_CHANNEL_3
 #define IR_A0_UART2_R_Pin GPIO_PIN_3
 #define IR_A0_UART2_R_GPIO_Port GPIOA
 #define BTN2_Pin GPIO_PIN_4

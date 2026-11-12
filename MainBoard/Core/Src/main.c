@@ -18,6 +18,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "adc.h"
 #include "can.h"
 #include "dma.h"
 #include "spi.h"
@@ -32,6 +33,8 @@
 #include "elcp_motor/elcp_motor.h"
 #include "rm_motor.h"
 #include "controller_receiver.h"
+#include "ir_app.h"
+#include "ir_config.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -183,7 +186,10 @@ int main(void)
   MX_TIM8_Init();
   MX_TIM12_Init();
   MX_CAN1_Init();
+  MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
+  IR_Init();
+
   if (ControllerReceiver_Start(&huart1) != HAL_OK)
   {
     Error_Handler();
@@ -217,6 +223,7 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    IR_Update();
     HAL_GPIO_TogglePin(LED_D6_GPIO_Port, LED_D6_Pin);
     uint32_t now = HAL_GetTick();
     if ((uint32_t)(now - led_last_tick) >= 20U)
