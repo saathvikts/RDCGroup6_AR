@@ -3,7 +3,7 @@
 
 #include "main.h"
 
-typedef struct { uint16_t raw; uint8_t d0; } IR_Sample;
+typedef struct { uint16_t a0; uint8_t d0; } IR_Sample;
 
 HAL_StatusTypeDef IR_ReadDigital(uint8_t *d0);
 HAL_StatusTypeDef IR_Read(IR_Sample *sample);

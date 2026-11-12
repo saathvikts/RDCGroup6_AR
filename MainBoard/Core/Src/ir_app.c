@@ -4,7 +4,7 @@
 #include "main.h"
 #include "lcd/lcd.h"
 
-static uint32_t last_update;
+static uint32_t last_update; 
 
 void IR_Init(void)
 {
@@ -27,12 +27,12 @@ static void DrawIR(void)
         return;
     }
     IR_Sample sample = {0};
-    if (IR_Read(&sample) != HAL_OK || sample.raw > 4095U || sample.d0 > 1U) {
+    if (IR_Read(&sample) != HAL_OK || sample.a0 > 4095U || sample.d0 > 1U) {
         tft_prints(0, 1, "A0:---- D0:%u", (unsigned)d0);
         tft_prints(0, 2, "ADC TODO/ERROR");
         return;
     }
-    tft_prints(0, 1, "A0:%4u D0:%u", (unsigned)sample.raw, (unsigned)sample.d0);
+    tft_prints(0, 1, "A0:%4u D0:%u", (unsigned)sample.a0, (unsigned)sample.d0);
     ProcessIR(&sample);
 }
 

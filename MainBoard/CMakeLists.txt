@@ -50,6 +50,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/controller_receiver.c
     Core/Src/robotics_logo.c
     Core/Src/ir_sensor.c
+    Core/Src/ir_app.c
     Core/Src/ultrasonic.c
     Core/Src/VL53L1X/vl53l1_platform.c
     Core/Src/elcp_motor/elcp_motor.c

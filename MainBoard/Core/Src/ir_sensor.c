@@ -2,6 +2,8 @@
 #include "adc.h"
 #include "main.h"
 #include "ir_config.h"
+#include "lcd/lcd.h"
+
 
 /* TODO: Implement functions in ir_sensor.h */
 HAL_StatusTypeDef IR_ReadDigital(uint8_t *d0)
@@ -27,7 +29,7 @@ HAL_StatusTypeDef IR_Read(IR_Sample *sample)
        Publish the sample only when the complete operation succeeds.
        F405 does not use the F103 ADC self-calibration call. */
 
-    if sample == NULL {
+    if (sample == NULL) {
         return HAL_ERROR;
     }
     
@@ -36,13 +38,13 @@ HAL_StatusTypeDef IR_Read(IR_Sample *sample)
 
     if (HAL_ADC_Start(&hadc1) != HAL_OK) {
         HAL_ADC_Stop(&hadc1);
-        return false;
+        return HAL_ERROR;
     }
 
     status = HAL_ADC_PollForConversion(&hadc1, 10);
     if (status == HAL_OK)
     {
-        value.a0 = (uint16_t)HAL_ADC_GetValue(&hadc1) 
+        value.a0 = (uint16_t)HAL_ADC_GetValue(&hadc1);
         status = IR_ReadDigital(&value.d0);
     }
 
@@ -67,7 +69,7 @@ void ProcessIR(const IR_Sample *sample)
     }
 
     // Classify surface based on analog value (A0) and polarity configuration
-#if IR_BLACK_IS_HIGH
+#if !IR_BLACK_IS_HIGH
     // If black surface gives a higher analog value (> threshold)
     if (sample->a0 > IR_THRESHOLD)
     {

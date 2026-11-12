@@ -34,7 +34,7 @@
 #include "rm_motor.h"
 #include "controller_receiver.h"
 #include "ir_app.h"
-#include "ir_config.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -277,20 +277,20 @@ int main(void)
        tft_update(), so the controller and motor rows never fight. */
     if ((uint32_t)(now - display_last_tick) >= 100U)
     {
-      ControllerReceiver_Draw();                       /* rows 0-4 */
-      tft_prints(0, 5, "M1 CAN:%-5s", feedback_fresh ? "OK" : "STALE");
-      tft_prints(0, 6, "RPM:%6d", (int)measured_rpm);  /* rotor RPM */
-      tft_prints(0, 7, "ENC:%5u", (unsigned)encoder);  /* 0-8191 per rotor turn */
-      /* Target and error (target - actual), both in rotor RPM. */
-      tft_prints(0, 8, "T:%5d E:%5d", (int)target_rpm,
-                 (int)target_rpm - (int)measured_rpm);
-      /* Current in mA: commanded (read back from the driver) / measured by
-         the C620. Measured ~= commanded means the ESC is obeying. */
-      tft_prints(0, 9, "I:%5d/%5d mA",
-                 (int)(rm_get_current_setpoint(&hcan1, motor) * 1000.0f),
-                 (int)(rm_get_actual_current(&hcan1, motor) * 1000.0f));
-      tft_update(0);
-      display_last_tick = now;
+      // ControllerReceiver_Draw();                       /* rows 0-4 */
+      // tft_prints(0, 5, "M1 CAN:%-5s", feedback_fresh ? "OK" : "STALE");
+      // tft_prints(0, 6, "RPM:%6d", (int)measured_rpm);  /* rotor RPM */
+      // tft_prints(0, 7, "ENC:%5u", (unsigned)encoder);  /* 0-8191 per rotor turn */
+      // /* Target and error (target - actual), both in rotor RPM. */
+      // tft_prints(0, 8, "T:%5d E:%5d", (int)target_rpm,
+      //            (int)target_rpm - (int)measured_rpm);
+      // /* Current in mA: commanded (read back from the driver) / measured by
+      //    the C620. Measured ~= commanded means the ESC is obeying. */
+      // tft_prints(0, 9, "I:%5d/%5d mA",
+      //            (int)(rm_get_current_setpoint(&hcan1, motor) * 1000.0f),
+      //            (int)(rm_get_actual_current(&hcan1, motor) * 1000.0f));
+      // tft_update(0);
+      // display_last_tick = now;
     }
   }
   /* USER CODE END 3 */

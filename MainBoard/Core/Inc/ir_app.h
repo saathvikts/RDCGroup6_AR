@@ -3,4 +3,5 @@
 
 void IR_Init(void);
 void IR_Update(void);
+
 #endif
