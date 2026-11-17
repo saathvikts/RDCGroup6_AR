@@ -1,0 +1,13 @@
+#ifndef TOF_CONFIG_H
+#define TOF_CONFIG_H
+         
+#ifndef TOF_WIRING_CONFIRMED
+#define TOF_WIRING_CONFIRMED 1
+#endif
+
+#define TOF_ADDRESS_HAL 0x52U
+#define SENSOR_IO_TIMEOUT_MS 25U
+
+#define OBSTACLE_NEAR_MM 200U
+#define SENSOR_UPDATE_MS 300U
+#endif

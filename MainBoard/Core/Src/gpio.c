@@ -60,7 +60,7 @@ void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(GPIOC, TFT_DC_Pin|TFT_CS_Pin|ELCP_J1_DIR_Pin|ELCP_J3_DIR_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(TFT_BL_GPIO_Port, TFT_BL_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, TFT_BL_Pin|TOF_Shut_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pins : LED_D5_Pin LED_D6_Pin LED_D7_Pin LED_D8_Pin
                            TFT_DC_Pin TFT_CS_Pin */
@@ -90,24 +90,18 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(TFT_RES_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : TFT_BL_Pin */
-  GPIO_InitStruct.Pin = TFT_BL_Pin;
+  /*Configure GPIO pins : TFT_BL_Pin TOF_Shut_Pin */
+  GPIO_InitStruct.Pin = TFT_BL_Pin|TOF_Shut_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(TFT_BL_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /*Configure GPIO pin : BTN1_Pin */
   GPIO_InitStruct.Pin = BTN1_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(BTN1_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : PB10 PB11 */
-  GPIO_InitStruct.Pin = GPIO_PIN_10|GPIO_PIN_11;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /*Configure GPIO pin : ELCP_J1_FB_Pin */
   GPIO_InitStruct.Pin = ELCP_J1_FB_Pin;

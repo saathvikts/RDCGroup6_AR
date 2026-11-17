@@ -43,7 +43,7 @@ static uint8_t row_shift;
 
 #if defined(MODEL_ILI9486)
 #define THREADED_TFT_BUF_LEN (7)
-#elif defined(MODEL_ILI9341) || defined(MODEL_ST7789)
+#elif defined(MODEL_ILI9341)
 #define THREADED_TFT_BUF_LEN (21)
 #elif defined(MODEL_ST7735) || defined(MODEL_ST7735S)
 #define THREADED_TFT_BUF_LEN (40)
@@ -162,11 +162,8 @@ void tft_init(TFT_ORIENTATION orientation, uint16_t bg_color,
 
     HAL_GPIO_WritePin(TFT_BL_GPIO_Port, TFT_BL_Pin, GPIO_PIN_SET);
 
-#if defined(TFT_CS_Pin) && !defined(MODEL_ST7735) && !defined(MODEL_ST7789)
+#if defined(TFT_CS_Pin) && !defined(MODEL_ST7735)
     HAL_GPIO_WritePin(TFT_CS_GPIO_Port, TFT_CS_Pin, GPIO_PIN_SET);
-#elif defined(TFT_CS_Pin) && defined(MODEL_ST7789)
-    // CS stays low: a high CS makes the ST7789 ignore every command.
-    HAL_GPIO_WritePin(TFT_CS_GPIO_Port, TFT_CS_Pin, GPIO_PIN_RESET);
 #endif
 
     uint32_t i = 0;
@@ -175,10 +172,9 @@ void tft_init(TFT_ORIENTATION orientation, uint16_t bg_color,
             write_byte(tft_init_code[i],
                     tft_orientation_init_code[tft_orientation]);
             i++;
-        } else if (tft_init_code[i + 1] == TFT_DELAY_MARKER) {
-            write_command(tft_init_code[i]);
-            HAL_Delay(tft_init_code[i + 2]);
+        } else if (tft_init_code[i] == TFT_DELAY_MARKER) {
             i += 3;
+            HAL_Delay(tft_init_code[i]);
         } else if (tft_init_code[i + 1] == TFT_EOL_MARKER) {
             write_command(tft_init_code[i]);
             i++;
@@ -414,7 +410,7 @@ void tft_printf(uint8_t x, uint8_t y, float num, uint32_t dp) {
 }
 
 static __forceinline void tft_buffer_pixel(uint8_t *out, uint16_t rgb565) {
-#if PIXEL_BYTES == 3  // RGB666 (ILI9486, ST7789)
+#ifdef MODEL_ILI9486  // RGB666
     out[0] = (rgb565 & 0xF800) >> (11 - 3);
     out[1] = (rgb565 & 0x7E0) >> (5 - 2);
     out[2] = (rgb565 & 0x1F) << 3;

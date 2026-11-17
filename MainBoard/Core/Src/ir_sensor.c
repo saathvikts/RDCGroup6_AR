@@ -1,7 +1,6 @@
-#include "ir_sensor.h"
 #include "adc.h"
 #include "main.h"
-#include "ir_config.h"
+#include "sensors.h"
 #include "lcd/lcd.h"
 
 

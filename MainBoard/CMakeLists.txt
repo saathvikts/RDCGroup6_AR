@@ -46,15 +46,14 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/lcd.c
     Core/Src/lcd_graphics.c
-    Core/Src/rm_motor.c
-    Core/Src/controller_receiver.c
     Core/Src/robotics_logo.c
     Core/Src/ir_sensor.c
-    Core/Src/ir_app.c
     Core/Src/ultrasonic.c
     Core/Src/VL53L1X/vl53l1_platform.c
     Core/Src/elcp_motor/elcp_motor.c
     Core/Src/VL53L1X/vl53l1x_subset.c
+    Core/Src/tof_sensor.c
+    Core/Src/ir_app.c
     # Add user sources here
 )
 

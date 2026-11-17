@@ -18,7 +18,6 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "adc.h"
 #include "spi.h"
 #include "usart.h"
 #include "gpio.h"
@@ -27,9 +26,6 @@
 /* USER CODE BEGIN Includes */
 #include "lcd/lcd.h"
 #include "lcd/lcd_graphics.h"
-#include "joystick.h"
-#include "buttons.h"
-#include "controller_link.h"
 
 /* USER CODE END Includes */
 
@@ -40,7 +36,6 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define DISPLAY_PERIOD_MS 100U
 
 /* USER CODE END PD */
 
@@ -52,9 +47,6 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-static uint8_t buttons;
-static Joystick_State joystick;
-static uint32_t last_display;
 
 /* USER CODE END PV */
 
@@ -66,40 +58,6 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
-{
-  if (huart == &huart1 && !Controller_Transmit()) Error_Handler();
-}
-
-static void DisplayInputs(void)
-{
-  uint32_t now = HAL_GetTick();
-  if ((uint32_t)(now - last_display) < DISPLAY_PERIOD_MS) return;
-  last_display = now;
-
-  uint8_t packet[CONTROLLER_PACKET_SIZE];
-  char button_text[BUTTON_COUNT + 1U];
-  const char *axis_names[4] = {"J1X", "J1Y", "J2X", "J2Y"};
-  Controller_GetPacket(packet);
-  for (unsigned i = 0; i < BUTTON_COUNT; ++i)
-  {
-    button_text[i] = (packet[CONTROLLER_BUTTONS_OFFSET] & (1U << i)) ? '1' : '0';
-  }
-  button_text[BUTTON_COUNT] = '\0';
-
-  tft_prints(0, 0, "CTRL TX 12B AA55");
-  tft_prints(0, 1, "B1-8:%s", button_text);
-  for (unsigned i = 0; i < JOYSTICK_AXIS_COUNT; ++i)
-  {
-    uint16_t wire = (uint16_t)packet[CONTROLLER_AXES_OFFSET + 2U * i] |
-                    ((uint16_t)packet[CONTROLLER_AXES_OFFSET + 1U + 2U * i] << 8);
-    int value = (wire & 0x8000U) ? (int)wire - 65536 : (int)wire;
-    tft_prints(0, (uint8_t)(2U + i), "%s:%+5d", axis_names[i], value);
-  }
-  tft_prints(0, 6, "SCALE:1000=1.0");
-  tft_prints(0, 7, "CRC:%02X", (unsigned)packet[CONTROLLER_CRC_OFFSET]);
-  tft_update(0);
-}
 
 /* USER CODE END 0 */
 
@@ -134,21 +92,8 @@ int main(void)
   MX_GPIO_Init();
   MX_SPI1_Init();
   MX_USART1_UART_Init();
-  MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
-  if (!Joystick_Start())
-  {
-    Error_Handler();
-  }
   tft_init(PIN_ON_TOP, BLACK, WHITE, CYAN, DARK_GREY);
-  buttons = Buttons_Read();
-  Joystick_Read(&joystick);
-  Controller_SetInputs(buttons, &joystick);
-  if (!Controller_Transmit())
-  {
-    Error_Handler();
-  }
-  last_display = HAL_GetTick() - DISPLAY_PERIOD_MS;
 
   /* USER CODE END 2 */
 
@@ -159,10 +104,6 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    buttons = Buttons_Read();
-    Joystick_Read(&joystick);
-    Controller_SetInputs(buttons, &joystick);
-    DisplayInputs();
   }
   /* USER CODE END 3 */
 }
@@ -175,7 +116,6 @@ void SystemClock_Config(void)
 {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
-  RCC_PeriphCLKInitTypeDef PeriphClkInit = {0};
 
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
@@ -202,12 +142,6 @@ void SystemClock_Config(void)
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
 
   if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_ADC;
-  PeriphClkInit.AdcClockSelection = RCC_ADCPCLK2_DIV6;
-  if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
   {
     Error_Handler();
   }

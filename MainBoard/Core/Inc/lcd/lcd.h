@@ -10,8 +10,6 @@
 //#define MODEL_ILI9486
 // 2.8 inch
 //#define MODEL_ILI9341
-// 2.0 inch (LongQiu)
-//#define MODEL_ST7789
 // 1.8 inch
 #define MODEL_ST7735
 //#define MODEL_ST7735S
@@ -80,24 +78,6 @@ typedef enum {
 #define MAX_HEIGHT 320
 
 #define PIXEL_BYTES 2
-
-#define CHAR_MAX_X_VERTICAL 30
-#define CHAR_MAX_Y_VERTICAL 20
-
-#define CHAR_MAX_X_HORIZONTAL 40
-#define CHAR_MAX_Y_HORIZONTAL 15
-
-#define CHAR_MAX_X 40  // max between CHAR_MAX_X_VERTICAL and CHAR_MAX_X_HORIZONTAL
-#define CHAR_MAX_Y 20  // max between CHAR_MAX_Y_VERTICAL and CHAR_MAX_Y_HORIZONTAL
-
-#endif
-
-#ifdef MODEL_ST7789  // 2.0 inch
-#define SCREEN_CHOSEN
-#define MAX_WIDTH 240
-#define MAX_HEIGHT 320
-
-#define PIXEL_BYTES 3
 
 #define CHAR_MAX_X_VERTICAL 30
 #define CHAR_MAX_Y_VERTICAL 20

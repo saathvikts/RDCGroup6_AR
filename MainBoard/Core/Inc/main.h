@@ -71,7 +71,6 @@ void Error_Handler(void);
 #define US_ECHO_GPIO_Port GPIOA
 #define IR_D0_UART2_T_Pin GPIO_PIN_2
 #define IR_D0_UART2_T_GPIO_Port GPIOA
-#define IR_A0_UART2_R_ADC_CHANNEL ADC_CHANNEL_3
 #define IR_A0_UART2_R_Pin GPIO_PIN_3
 #define IR_A0_UART2_R_GPIO_Port GPIOA
 #define BTN2_Pin GPIO_PIN_4
@@ -104,6 +103,8 @@ void Error_Handler(void);
 #define ELCP_J3_FB_EXTI_IRQn EXTI9_5_IRQn
 #define ELCP_J3_DIR_Pin GPIO_PIN_9
 #define ELCP_J3_DIR_GPIO_Port GPIOC
+#define TOF_Shut_Pin GPIO_PIN_6
+#define TOF_Shut_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 #define __forceinline __attribute__((__always_inline__)) inline

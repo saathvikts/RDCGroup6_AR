@@ -43,6 +43,7 @@ int8_t VL53L1_RdWord(uint16_t dev,uint16_t reg,uint16_t *v)
     if (status) return status;
     /* TODO TOF B: combine b[0]/b[1] in the documented byte order into *v.
        Return zero only after implementing the conversion. */
-    first_error=-1;
-    return first_error;
+    *v = ((uint16_t)b[0] << 8) | (uint16_t)b[1];
+    return 0;
 }
+
